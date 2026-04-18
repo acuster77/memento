@@ -595,10 +595,10 @@ function renderSavePreview(
   previewPanel.className = 'preview-panel';
   const titleEl = document.createElement('div');
   titleEl.className = 'preview-title';
-  const tableEl = document.createElement('table');
-  tableEl.className = 'preview-table';
+  const gridEl = document.createElement('div');
+  gridEl.className = 'preview-grid';
   previewPanel.appendChild(titleEl);
-  previewPanel.appendChild(tableEl);
+  previewPanel.appendChild(gridEl);
   view.appendChild(previewPanel);
 
   const footer = document.createElement('div');
@@ -639,31 +639,27 @@ function renderSavePreview(
     titleEl.textContent = `Preview (${visible.length} of ${fields.length} field${
       fields.length === 1 ? '' : 's'
     })`;
-    tableEl.innerHTML = '';
+    gridEl.innerHTML = '';
     if (visible.length === 0) {
-      tableEl.innerHTML =
-        '<tr><td colspan="3" class="empty inline">No fields to capture with current settings.</td></tr>';
+      const p = document.createElement('p');
+      p.className = 'empty inline preview-empty';
+      p.textContent = 'No fields to capture with current settings.';
+      gridEl.appendChild(p);
       return;
     }
     for (const f of visible) {
-      const tr = document.createElement('tr');
-      const kCell = document.createElement('td');
-      kCell.className = 'k';
-      kCell.textContent = fieldDisplayLabel(f);
-      const tCell = document.createElement('td');
-      tCell.className = 't';
-      tCell.textContent = fieldTypeLabel(f.type) + (f.readonly ? ' · ro' : '');
-      const vCell = document.createElement('td');
-      vCell.className = 'v';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'pv-name' + (f.readonly ? ' is-readonly' : '');
+      nameEl.textContent = fieldDisplayLabel(f);
 
+      const valueEl = document.createElement('div');
+      valueEl.className = 'pv-value pv-type-' + f.type;
       const { wrapper, input } = createEditor(f);
       editors.set(f.key, input);
-      vCell.appendChild(wrapper);
+      valueEl.appendChild(wrapper);
 
-      tr.appendChild(kCell);
-      tr.appendChild(tCell);
-      tr.appendChild(vCell);
-      tableEl.appendChild(tr);
+      gridEl.appendChild(nameEl);
+      gridEl.appendChild(valueEl);
     }
   };
 
@@ -724,19 +720,11 @@ type EditorResult = {
 function createEditor(f: SnapshotField): EditorResult {
   switch (f.type) {
     case 'checkbox': {
-      const wrapper = document.createElement('label');
-      wrapper.className = 'edit-check';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
+      cb.className = 'edit-check';
       cb.checked = f.value === true;
-      const label = document.createElement('span');
-      label.textContent = cb.checked ? 'checked' : 'unchecked';
-      cb.addEventListener('change', () => {
-        label.textContent = cb.checked ? 'checked' : 'unchecked';
-      });
-      wrapper.appendChild(cb);
-      wrapper.appendChild(label);
-      return { wrapper, input: cb };
+      return { wrapper: cb, input: cb };
     }
     case 'radio':
     case 'select-one': {
@@ -942,18 +930,6 @@ function fieldDisplayLabel(f: SnapshotField): string {
   return f.key;
 }
 
-function fieldTypeLabel(t: string): string {
-  switch (t) {
-    case 'select-one':
-      return 'select';
-    case 'select-multiple':
-      return 'multi-select';
-    case 'contenteditable':
-      return 'rich-text';
-    default:
-      return t;
-  }
-}
 
 async function sendToActiveTab<R>(msg: Message): Promise<R> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
