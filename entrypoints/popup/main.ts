@@ -1,0 +1,984 @@
+import { browser } from 'wxt/browser';
+import { SnapshotStore } from '../../utils/storage';
+import type {
+  ApplyResponse,
+  Message,
+  PreviewResponse,
+  SaveResponse,
+  ScanResponse,
+} from '../../utils/messages';
+import type {
+  DetectedForm,
+  FormIdentity,
+  Snapshot,
+  SnapshotField,
+} from '../../utils/types';
+
+const root = document.getElementById('root') as HTMLElement;
+const screen = document.getElementById('screen') as HTMLElement;
+document.getElementById('rescan')!.addEventListener('click', renderList);
+
+renderList();
+
+type NavDirection = 'forward' | 'back';
+
+const prefersReducedMotion =
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const EXIT_MS = 160;
+const ENTER_MS = 220;
+const EXIT_EASE = 'cubic-bezier(0.4, 0, 1, 1)';
+const ENTER_EASE = 'cubic-bezier(0, 0, 0.2, 1)';
+
+async function navigate(
+  direction: NavDirection,
+  update: () => void | Promise<void>,
+): Promise<void> {
+  if (prefersReducedMotion) {
+    await update();
+    return;
+  }
+  const exitTo = direction === 'forward' ? '-30%' : '30%';
+  const enterFrom = direction === 'forward' ? '30%' : '-30%';
+
+  await runAnimation(
+    screen,
+    [
+      { transform: 'translateX(0)', opacity: 1 },
+      { transform: `translateX(${exitTo})`, opacity: 0 },
+    ],
+    { duration: EXIT_MS, easing: EXIT_EASE, fill: 'forwards' },
+  );
+
+  await update();
+  root.scrollTop = 0;
+
+  await runAnimation(
+    screen,
+    [
+      { transform: `translateX(${enterFrom})`, opacity: 0 },
+      { transform: 'translateX(0)', opacity: 1 },
+    ],
+    { duration: ENTER_MS, easing: ENTER_EASE, fill: 'forwards' },
+  );
+}
+
+async function runAnimation(
+  el: HTMLElement,
+  keyframes: Keyframe[],
+  options: KeyframeAnimationOptions,
+): Promise<void> {
+  const anim = el.animate(keyframes, options);
+  try {
+    await anim.finished;
+    // Freeze the final frame as inline styles so the layer doesn't demote
+    // and no layout/paint change happens when the animation effect ends.
+    anim.commitStyles();
+  } catch {
+    // aborted/cancelled
+  } finally {
+    anim.cancel();
+  }
+}
+
+// ---------- list view ----------
+
+async function renderList(): Promise<void> {
+  screen.innerHTML = '<p class="loading">Scanning…</p>';
+  let scan: ScanResponse;
+  try {
+    scan = await sendToActiveTab<ScanResponse>({ kind: 'scan' });
+  } catch (e) {
+    screen.innerHTML = `<p class="error">Cannot scan this page.<br/>${escapeHtml(String(e))}</p>`;
+    return;
+  }
+  const all = await SnapshotStore.all();
+  screen.innerHTML = '';
+
+  if (scan.forms.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'No forms detected on this page.';
+    screen.appendChild(p);
+  } else {
+    for (const form of scan.forms) {
+      screen.appendChild(renderFormCard(form, all));
+    }
+  }
+
+  screen.appendChild(renderAllSnapshots(all, scan.forms));
+  screen.appendChild(renderDataTools(all));
+}
+
+function renderFormCard(form: DetectedForm, all: Snapshot[]): HTMLElement {
+  const el = document.createElement('section');
+  el.className = 'form-card';
+  el.addEventListener('mouseenter', () => {
+    sendToActiveTab({ kind: 'highlight', formIndex: form.index, scroll: true }).catch(
+      () => {},
+    );
+  });
+  el.addEventListener('mouseleave', () => {
+    sendToActiveTab({ kind: 'unhighlight' }).catch(() => {});
+  });
+
+  const title = formTitle(form);
+  const badges: string[] = [];
+  if (form.hasPassword) badges.push('<span class="badge warn">password</span>');
+  if (form.hasFile) badges.push('<span class="badge">file</span>');
+  if (form.hasHidden) badges.push('<span class="badge">hidden</span>');
+  if (form.hasReadonly) badges.push('<span class="badge">readonly</span>');
+
+  el.innerHTML = `
+    <header>
+      <strong>${escapeHtml(title)}</strong>
+      <span class="meta">${form.fieldCount} fields ${badges.join(' ')}</span>
+    </header>
+    <button class="save primary">New Snapshot</button>
+    <ul class="matches"></ul>
+  `;
+
+  (el.querySelector('.save') as HTMLButtonElement).addEventListener('click', () =>
+    openSavePreview(form),
+  );
+
+  const list = el.querySelector('.matches') as HTMLUListElement;
+  const matches = scoreMatches(all, form.identity);
+  if (matches.length === 0) {
+    list.innerHTML = '<li class="empty inline">No matching snapshots</li>';
+  } else {
+    for (const m of matches) {
+      list.appendChild(renderMatch(m.snapshot, form.index));
+    }
+  }
+  return el;
+}
+
+function renderMatch(s: Snapshot, formIndex: number): HTMLLIElement {
+  const li = document.createElement('li');
+  li.className = 'match';
+  const secret = s.flags.containsSecrets ? ' <span class="badge danger">secrets</span>' : '';
+  li.innerHTML = `
+    <div>
+      <strong>${escapeHtml(s.label)}</strong>
+      ${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ''}
+      ${secret}
+    </div>
+    <div class="actions">
+      <button class="apply">Apply</button>
+      <button class="delete" title="Delete">×</button>
+    </div>
+  `;
+  (li.querySelector('.apply') as HTMLButtonElement).addEventListener('click', () =>
+    applyTo(formIndex, s.id),
+  );
+  (li.querySelector('.delete') as HTMLButtonElement).addEventListener('click', () =>
+    openDeleteConfirm(s),
+  );
+  return li;
+}
+
+// Persists across rerenders. '' = all. '__uncategorized__' = no category.
+let categoryFilter = '';
+
+function renderAllSnapshots(all: Snapshot[], forms: DetectedForm[]): HTMLElement {
+  const details = document.createElement('details');
+  details.className = 'all-snapshots';
+  const summary = document.createElement('summary');
+  summary.textContent = `All snapshots (${all.length})`;
+  details.appendChild(summary);
+
+  if (all.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'No snapshots saved yet.';
+    details.appendChild(p);
+    return details;
+  }
+
+  const categories = collectCategories(all);
+  const hasUncategorized = all.some((s) => !s.category);
+
+  if (categories.length > 0 || hasUncategorized) {
+    // If the previously-chosen filter no longer applies, reset to "all".
+    if (
+      categoryFilter &&
+      categoryFilter !== '__uncategorized__' &&
+      !categories.includes(categoryFilter)
+    ) {
+      categoryFilter = '';
+    }
+    if (categoryFilter === '__uncategorized__' && !hasUncategorized) {
+      categoryFilter = '';
+    }
+
+    const filterRow = document.createElement('div');
+    filterRow.className = 'filter-row';
+    filterRow.innerHTML = '<span class="filter-label">Category</span>';
+    const sel = document.createElement('select');
+    sel.innerHTML =
+      `<option value="">All</option>` +
+      categories
+        .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+        .join('') +
+      (hasUncategorized ? `<option value="__uncategorized__">Uncategorized</option>` : '');
+    sel.value = categoryFilter;
+    sel.addEventListener('change', () => {
+      categoryFilter = sel.value;
+      renderList();
+    });
+    filterRow.appendChild(sel);
+    details.appendChild(filterRow);
+  }
+
+  const filtered = applyCategoryFilter(all, categoryFilter);
+
+  if (filtered.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty inline';
+    p.textContent = 'No snapshots match this filter.';
+    details.appendChild(p);
+    return details;
+  }
+
+  const ul = document.createElement('ul');
+  ul.className = 'all-list';
+  for (const s of filtered) {
+    ul.appendChild(renderAllItem(s, forms));
+  }
+  details.appendChild(ul);
+  return details;
+}
+
+function collectCategories(all: Snapshot[]): string[] {
+  const set = new Set<string>();
+  for (const s of all) if (s.category) set.add(s.category);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function applyCategoryFilter(all: Snapshot[], filter: string): Snapshot[] {
+  if (!filter) return all;
+  if (filter === '__uncategorized__') return all.filter((s) => !s.category);
+  return all.filter((s) => s.category === filter);
+}
+
+function renderAllItem(s: Snapshot, forms: DetectedForm[]): HTMLLIElement {
+  const li = document.createElement('li');
+  const secret = s.flags.containsSecrets ? ' <span class="badge danger">secrets</span>' : '';
+  const info = document.createElement('div');
+  info.innerHTML = `
+    <strong>${escapeHtml(s.label)}</strong>
+    ${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ''}
+    ${secret}
+    <div class="meta-line">${escapeHtml(s.form.origin)}${escapeHtml(s.form.pathname)}</div>
+  `;
+  li.appendChild(info);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const select = document.createElement('select');
+  select.innerHTML =
+    `<option value="">Apply to…</option>` +
+    forms.map((f, i) => `<option value="${i}">${escapeHtml(formTitle(f))}</option>`).join('');
+  select.addEventListener('change', async () => {
+    if (select.value === '') return;
+    const idx = Number(select.value);
+    await applyTo(idx, s.id);
+    select.value = '';
+  });
+
+  const exportBtn = document.createElement('button');
+  exportBtn.textContent = '↓';
+  exportBtn.title = 'Export as JSON';
+  exportBtn.addEventListener('click', () => exportSnapshot(s));
+
+  const del = document.createElement('button');
+  del.textContent = '×';
+  del.title = 'Delete';
+  del.addEventListener('click', () => openDeleteConfirm(s));
+
+  actions.appendChild(select);
+  actions.appendChild(exportBtn);
+  actions.appendChild(del);
+  li.appendChild(actions);
+  return li;
+}
+
+function renderDataTools(all: Snapshot[]): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'data-tools';
+
+  const exportAll = document.createElement('button');
+  exportAll.textContent = `Export all (${all.length})`;
+  exportAll.disabled = all.length === 0;
+  exportAll.addEventListener('click', () => exportAllSnapshots(all));
+
+  const importBtn = document.createElement('button');
+  importBtn.textContent = 'Import JSON…';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'application/json,.json';
+  fileInput.style.display = 'none';
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (file) await importFromFile(file);
+    fileInput.value = '';
+  });
+
+  importBtn.addEventListener('click', () => fileInput.click());
+
+  const clearAllBtn = document.createElement('button');
+  clearAllBtn.textContent = 'Clear all';
+  clearAllBtn.className = 'ghost-danger';
+  clearAllBtn.disabled = all.length === 0;
+  clearAllBtn.addEventListener('click', () => openClearAllConfirm(all.length));
+
+  wrap.appendChild(exportAll);
+  wrap.appendChild(importBtn);
+  wrap.appendChild(clearAllBtn);
+  wrap.appendChild(fileInput);
+  return wrap;
+}
+
+// ---------- clear-all confirm view ----------
+
+async function openClearAllConfirm(count: number): Promise<void> {
+  await navigate('forward', () => {
+    renderClearAllConfirm(count);
+  });
+  const cancelBtn = document.querySelector<HTMLButtonElement>('.clear-all-view .cancel');
+  cancelBtn?.focus({ preventScroll: true });
+}
+
+function renderClearAllConfirm(count: number): void {
+  screen.innerHTML = '';
+
+  const view = document.createElement('div');
+  view.className = 'preview-view clear-all-view';
+
+  const header = document.createElement('div');
+  header.className = 'preview-header';
+  header.innerHTML = `
+    <button class="back" title="Back">←</button>
+    <strong>Clear all snapshots</strong>
+    <span class="meta">${count} total</span>
+  `;
+  (header.querySelector('.back') as HTMLButtonElement).addEventListener('click', backToList);
+  view.appendChild(header);
+
+  const warn = document.createElement('p');
+  warn.className = 'confirm-prompt';
+  warn.textContent = `This will permanently delete all ${count} saved snapshot${
+    count === 1 ? '' : 's'
+  }. This cannot be undone. Export first if you want a backup.`;
+  view.appendChild(warn);
+
+  const footer = document.createElement('div');
+  footer.className = 'preview-footer';
+  footer.innerHTML = `
+    <button class="cancel">Cancel</button>
+    <button class="confirm danger">Delete all ${count} snapshot${count === 1 ? '' : 's'}</button>
+  `;
+  view.appendChild(footer);
+
+  screen.appendChild(view);
+
+  const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
+  const confirmBtn = footer.querySelector('.confirm') as HTMLButtonElement;
+
+  cancelBtn.addEventListener('click', backToList);
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    await SnapshotStore.clearAll();
+    toast(`Cleared ${count} snapshot${count === 1 ? '' : 's'}`);
+    await backToList();
+  });
+
+  view.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') backToList();
+  });
+}
+
+// ---------- import / export ----------
+
+const EXPORT_VERSION = 1;
+
+function exportSnapshot(s: Snapshot): void {
+  const filename = `snapshot-${slugify(s.label)}-${s.id.slice(0, 8)}.json`;
+  downloadJson(
+    { version: EXPORT_VERSION, exportedAt: new Date().toISOString(), snapshots: [s] },
+    filename,
+  );
+}
+
+function exportAllSnapshots(snapshots: Snapshot[]): void {
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `form-snapshots-${date}.json`;
+  downloadJson(
+    { version: EXPORT_VERSION, exportedAt: new Date().toISOString(), snapshots },
+    filename,
+  );
+  toast(`Exported ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'}`);
+}
+
+async function importFromFile(file: File): Promise<void> {
+  try {
+    const text = await file.text();
+    const parsed: unknown = JSON.parse(text);
+    const incoming = extractSnapshots(parsed);
+    if (incoming.length === 0) {
+      toast('No snapshots found in file', true);
+      return;
+    }
+    const existing = await SnapshotStore.all();
+    const existingIds = new Set(existing.map((s) => s.id));
+    let imported = 0;
+    for (const raw of incoming) {
+      const s: Snapshot = {
+        ...raw,
+        id: existingIds.has(raw.id) ? crypto.randomUUID() : raw.id,
+        createdAt: raw.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      };
+      await SnapshotStore.save(s);
+      existingIds.add(s.id);
+      imported++;
+    }
+    toast(`Imported ${imported} snapshot${imported === 1 ? '' : 's'}`);
+    renderList();
+  } catch (e) {
+    toast(`Import failed: ${String(e)}`, true);
+  }
+}
+
+function extractSnapshots(parsed: unknown): Snapshot[] {
+  if (Array.isArray(parsed)) return parsed.filter(isSnapshotLike);
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as { snapshots?: unknown };
+    if (Array.isArray(obj.snapshots)) return obj.snapshots.filter(isSnapshotLike);
+    if (isSnapshotLike(parsed)) return [parsed];
+  }
+  return [];
+}
+
+function isSnapshotLike(x: unknown): x is Snapshot {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.id === 'string' &&
+    typeof o.label === 'string' &&
+    typeof o.form === 'object' &&
+    o.form !== null &&
+    Array.isArray(o.fields)
+  );
+}
+
+function downloadJson(data: unknown, filename: string): void {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'snapshot'
+  );
+}
+
+// ---------- save-preview view ----------
+
+async function openSavePreview(form: DetectedForm): Promise<void> {
+  let preview: PreviewResponse;
+  try {
+    preview = await sendToActiveTab<PreviewResponse>({
+      kind: 'preview',
+      formIndex: form.index,
+    });
+  } catch (e) {
+    screen.innerHTML = `<p class="error">Cannot read form.<br/>${escapeHtml(String(e))}</p>`;
+    return;
+  }
+  if (!preview.ok) {
+    screen.innerHTML = `<p class="error">${escapeHtml(preview.error)}</p>`;
+    return;
+  }
+  const p = preview;
+  await navigate('forward', () => {
+    renderSavePreview(form, p.identity, p.fields, {
+      hasPassword: p.hasPassword,
+      hasHidden: p.hasHidden,
+      hasReadonly: p.hasReadonly,
+    });
+  });
+  // Focus after the enter animation completes so that Chrome's scroll-into-view
+  // behaviour on focus does not interact with the running animation.
+  const labelInput = document.getElementById('snap-label') as HTMLInputElement | null;
+  labelInput?.focus({ preventScroll: true });
+}
+
+async function backToList(): Promise<void> {
+  await navigate('back', renderList);
+}
+
+function renderSavePreview(
+  form: DetectedForm,
+  identity: FormIdentity,
+  fields: SnapshotField[],
+  has: { hasPassword: boolean; hasHidden: boolean; hasReadonly: boolean },
+): void {
+  screen.innerHTML = '';
+
+  const view = document.createElement('div');
+  view.className = 'preview-view';
+
+  const header = document.createElement('div');
+  header.className = 'preview-header';
+  header.innerHTML = `
+    <button class="back" title="Back">←</button>
+    <strong>New Snapshot</strong>
+    <span class="meta">${escapeHtml(formTitle(form))}</span>
+  `;
+  (header.querySelector('.back') as HTMLButtonElement).addEventListener('click', backToList);
+  view.appendChild(header);
+
+  const labelField = document.createElement('label');
+  labelField.className = 'field';
+  labelField.innerHTML = `
+    <span>Label <em>required</em></span>
+    <input type="text" id="snap-label" autocomplete="off" placeholder="e.g. dev-admin-login" />
+  `;
+  view.appendChild(labelField);
+
+  const categoryField = document.createElement('label');
+  categoryField.className = 'field';
+  categoryField.innerHTML = `
+    <span>Category <em>optional</em></span>
+    <input type="text" id="snap-category" autocomplete="off" placeholder="e.g. smoke-test" />
+  `;
+  view.appendChild(categoryField);
+
+  const toggles = document.createElement('div');
+  toggles.className = 'toggle-group';
+  toggles.style.display =
+    has.hasPassword || has.hasHidden || has.hasReadonly ? '' : 'none';
+  toggles.innerHTML = `
+    <label class="toggle" style="display:${has.hasPassword ? '' : 'none'}">
+      <input type="checkbox" id="snap-include-pwd" />
+      <span>Include password fields</span>
+    </label>
+    <label class="toggle" style="display:${has.hasHidden ? '' : 'none'}">
+      <input type="checkbox" id="snap-include-hidden" />
+      <span>Include hidden fields</span>
+    </label>
+    <label class="toggle" style="display:${has.hasReadonly ? '' : 'none'}">
+      <input type="checkbox" id="snap-include-readonly" />
+      <span>Include readonly fields</span>
+    </label>
+  `;
+  view.appendChild(toggles);
+
+  const previewPanel = document.createElement('div');
+  previewPanel.className = 'preview-panel';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'preview-title';
+  const tableEl = document.createElement('table');
+  tableEl.className = 'preview-table';
+  previewPanel.appendChild(titleEl);
+  previewPanel.appendChild(tableEl);
+  view.appendChild(previewPanel);
+
+  const footer = document.createElement('div');
+  footer.className = 'preview-footer';
+  footer.innerHTML = `
+    <button class="cancel">Cancel</button>
+    <button class="confirm primary" disabled>Save snapshot</button>
+  `;
+  view.appendChild(footer);
+
+  screen.appendChild(view);
+
+  const labelInput = view.querySelector('#snap-label') as HTMLInputElement;
+  const categoryInput = view.querySelector('#snap-category') as HTMLInputElement;
+  const includePwdInput = view.querySelector('#snap-include-pwd') as HTMLInputElement;
+  const includeHiddenInput = view.querySelector('#snap-include-hidden') as HTMLInputElement;
+  const includeReadonlyInput = view.querySelector('#snap-include-readonly') as HTMLInputElement;
+  const confirmBtn = footer.querySelector('.confirm') as HTMLButtonElement;
+  const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
+
+  // Map from field.key to the form-control element we render, so we can read
+  // user-edited values back out when the user hits Save.
+  const editors = new Map<
+    string,
+    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+  >();
+
+  const fieldIsIncluded = (f: SnapshotField): boolean => {
+    if (f.type === 'password' && !includePwdInput.checked) return false;
+    if (f.type === 'hidden' && !includeHiddenInput.checked) return false;
+    if (f.readonly && !includeReadonlyInput.checked) return false;
+    return true;
+  };
+
+  const repaintTable = () => {
+    editors.clear();
+    const visible = fields.filter(fieldIsIncluded);
+    titleEl.textContent = `Preview (${visible.length} of ${fields.length} field${
+      fields.length === 1 ? '' : 's'
+    })`;
+    tableEl.innerHTML = '';
+    if (visible.length === 0) {
+      tableEl.innerHTML =
+        '<tr><td colspan="3" class="empty inline">No fields to capture with current settings.</td></tr>';
+      return;
+    }
+    for (const f of visible) {
+      const tr = document.createElement('tr');
+      const kCell = document.createElement('td');
+      kCell.className = 'k';
+      kCell.textContent = fieldDisplayLabel(f);
+      const tCell = document.createElement('td');
+      tCell.className = 't';
+      tCell.textContent = fieldTypeLabel(f.type) + (f.readonly ? ' · ro' : '');
+      const vCell = document.createElement('td');
+      vCell.className = 'v';
+
+      const { wrapper, input } = createEditor(f);
+      editors.set(f.key, input);
+      vCell.appendChild(wrapper);
+
+      tr.appendChild(kCell);
+      tr.appendChild(tCell);
+      tr.appendChild(vCell);
+      tableEl.appendChild(tr);
+    }
+  };
+
+  const validate = () => {
+    confirmBtn.disabled = labelInput.value.trim().length === 0;
+  };
+
+  labelInput.addEventListener('input', validate);
+  includePwdInput.addEventListener('change', repaintTable);
+  includeHiddenInput.addEventListener('change', repaintTable);
+  includeReadonlyInput.addEventListener('change', repaintTable);
+  cancelBtn.addEventListener('click', backToList);
+  confirmBtn.addEventListener('click', async () => {
+    const label = labelInput.value.trim();
+    if (!label) return;
+    confirmBtn.disabled = true;
+    const editedFields: SnapshotField[] = [];
+    for (const f of fields) {
+      if (!fieldIsIncluded(f)) continue;
+      const editor = editors.get(f.key);
+      editedFields.push(editor ? readEditor(f, editor) : f);
+    }
+    const res = await sendToActiveTab<SaveResponse>({
+      kind: 'save',
+      formIndex: form.index,
+      options: {
+        label,
+        category: categoryInput.value.trim() || undefined,
+        includePasswords: includePwdInput.checked,
+      },
+      fields: editedFields,
+    });
+    if (res.ok) {
+      toast(`Saved "${res.snapshot.label}"`);
+      await backToList();
+    } else {
+      toast(`Save failed: ${res.error}`, true);
+      confirmBtn.disabled = false;
+    }
+  });
+
+  labelInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmBtn.disabled) confirmBtn.click();
+    if (e.key === 'Escape') backToList();
+  });
+
+  repaintTable();
+
+  // Suppress unused warning; the identity is displayed via form title.
+  void identity;
+}
+
+type EditorResult = {
+  wrapper: HTMLElement;
+  input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+};
+
+function createEditor(f: SnapshotField): EditorResult {
+  switch (f.type) {
+    case 'checkbox': {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'edit-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = f.value === true;
+      const label = document.createElement('span');
+      label.textContent = cb.checked ? 'checked' : 'unchecked';
+      cb.addEventListener('change', () => {
+        label.textContent = cb.checked ? 'checked' : 'unchecked';
+      });
+      wrapper.appendChild(cb);
+      wrapper.appendChild(label);
+      return { wrapper, input: cb };
+    }
+    case 'radio':
+    case 'select-one': {
+      const sel = document.createElement('select');
+      sel.className = 'edit-input';
+      const current = typeof f.value === 'string' ? f.value : '';
+      const opts = f.options ?? [];
+      if (current !== '' && !opts.some((o) => o.value === current)) {
+        const o = document.createElement('option');
+        o.value = current;
+        o.textContent = `${current} (current)`;
+        sel.appendChild(o);
+      }
+      for (const opt of opts) {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.text || opt.value;
+        sel.appendChild(o);
+      }
+      sel.value = current;
+      return { wrapper: sel, input: sel };
+    }
+    case 'select-multiple': {
+      const sel = document.createElement('select');
+      sel.className = 'edit-input edit-multi';
+      sel.multiple = true;
+      const opts = f.options ?? [];
+      const currentArr = Array.isArray(f.value) ? f.value : [];
+      const current = new Set(currentArr);
+      for (const cv of currentArr) {
+        if (!opts.some((o) => o.value === cv)) {
+          const o = document.createElement('option');
+          o.value = cv;
+          o.textContent = `${cv} (current)`;
+          o.selected = true;
+          sel.appendChild(o);
+        }
+      }
+      for (const opt of opts) {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.text || opt.value;
+        o.selected = current.has(opt.value);
+        sel.appendChild(o);
+      }
+      sel.size = Math.min(Math.max(sel.options.length, 2), 4);
+      return { wrapper: sel, input: sel };
+    }
+    case 'textarea':
+    case 'contenteditable': {
+      const ta = document.createElement('textarea');
+      ta.className = 'edit-input edit-textarea';
+      ta.rows = 3;
+      ta.value = typeof f.value === 'string' ? f.value : '';
+      return { wrapper: ta, input: ta };
+    }
+    default: {
+      const inp = document.createElement('input');
+      inp.className = 'edit-input';
+      inp.type = f.type === 'password' ? 'password' : 'text';
+      inp.value =
+        typeof f.value === 'string'
+          ? f.value
+          : typeof f.value === 'boolean'
+            ? String(f.value)
+            : String(f.value ?? '');
+      return { wrapper: inp, input: inp };
+    }
+  }
+}
+
+function readEditor(
+  f: SnapshotField,
+  input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+): SnapshotField {
+  if (input instanceof HTMLInputElement && input.type === 'checkbox') {
+    return { ...f, value: input.checked };
+  }
+  if (input instanceof HTMLSelectElement && input.multiple) {
+    return { ...f, value: Array.from(input.selectedOptions).map((o) => o.value) };
+  }
+  return { ...f, value: input.value };
+}
+
+// ---------- delete confirm view ----------
+
+async function openDeleteConfirm(snapshot: Snapshot): Promise<void> {
+  await navigate('forward', () => {
+    renderDeleteConfirm(snapshot);
+  });
+  const cancelBtn = document.querySelector<HTMLButtonElement>('.delete-view .cancel');
+  cancelBtn?.focus({ preventScroll: true });
+}
+
+function renderDeleteConfirm(snapshot: Snapshot): void {
+  screen.innerHTML = '';
+
+  const view = document.createElement('div');
+  view.className = 'preview-view delete-view';
+
+  const header = document.createElement('div');
+  header.className = 'preview-header';
+  header.innerHTML = `
+    <button class="back" title="Back">←</button>
+    <strong>Delete snapshot</strong>
+    <span class="meta">${escapeHtml(snapshot.label)}</span>
+  `;
+  (header.querySelector('.back') as HTMLButtonElement).addEventListener('click', backToList);
+  view.appendChild(header);
+
+  const warn = document.createElement('p');
+  warn.className = 'confirm-prompt';
+  warn.textContent = 'Are you sure you want to delete this snapshot? This cannot be undone.';
+  view.appendChild(warn);
+
+  const panel = document.createElement('div');
+  panel.className = 'preview-panel';
+  const tbl = document.createElement('table');
+  tbl.className = 'preview-table';
+  tbl.innerHTML = `
+    <tr><td class="k">Label</td><td class="v">${escapeHtml(snapshot.label)}</td></tr>
+    ${snapshot.category ? `<tr><td class="k">Category</td><td class="v">${escapeHtml(snapshot.category)}</td></tr>` : ''}
+    <tr><td class="k">Origin</td><td class="v">${escapeHtml(snapshot.form.origin)}${escapeHtml(snapshot.form.pathname)}</td></tr>
+    <tr><td class="k">Fields</td><td class="v">${snapshot.fields.length}</td></tr>
+    <tr><td class="k">Saved</td><td class="v">${escapeHtml(new Date(snapshot.createdAt).toLocaleString())}</td></tr>
+    ${snapshot.flags.containsSecrets ? '<tr><td class="k">Flags</td><td class="v"><span class="badge danger">secrets</span></td></tr>' : ''}
+  `;
+  panel.appendChild(tbl);
+  view.appendChild(panel);
+
+  const footer = document.createElement('div');
+  footer.className = 'preview-footer';
+  footer.innerHTML = `
+    <button class="cancel">Cancel</button>
+    <button class="confirm danger">Delete snapshot</button>
+  `;
+  view.appendChild(footer);
+
+  screen.appendChild(view);
+
+  const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
+  const confirmBtn = footer.querySelector('.confirm') as HTMLButtonElement;
+
+  cancelBtn.addEventListener('click', backToList);
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    await SnapshotStore.remove(snapshot.id);
+    toast(`Deleted "${snapshot.label}"`);
+    await backToList();
+  });
+
+  view.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') backToList();
+  });
+}
+
+// ---------- apply ----------
+
+async function applyTo(formIndex: number, snapshotId: string): Promise<void> {
+  const res = await sendToActiveTab<ApplyResponse>({
+    kind: 'apply',
+    formIndex,
+    snapshotId,
+  });
+  if (res.ok) toast(`Applied ${res.appliedCount} fields`);
+  else toast(`Apply failed: ${res.error}`, true);
+}
+
+// ---------- helpers ----------
+
+function scoreMatches(
+  all: Snapshot[],
+  identity: FormIdentity,
+): { snapshot: Snapshot; score: number }[] {
+  const matches: { snapshot: Snapshot; score: number }[] = [];
+  for (const s of all) {
+    if (s.form.origin !== identity.origin) continue;
+    const a = s.form;
+    let score = 0;
+    if (a.formId && a.formId === identity.formId) score = Math.max(score, 100);
+    if (a.formName && a.formName === identity.formName) score = Math.max(score, 80);
+    if (a.fingerprint && a.fingerprint === identity.fingerprint) score = Math.max(score, 70);
+    if (a.action && a.action === identity.action) score = Math.max(score, 60);
+    if (a.domPath && a.domPath === identity.domPath) score = Math.max(score, 40);
+    if (score > 0 && a.pathname === identity.pathname) score += 5;
+    if (score > 0) matches.push({ snapshot: s, score });
+  }
+  matches.sort((a, b) => b.score - a.score);
+  return matches;
+}
+
+function formTitle(f: DetectedForm): string {
+  if (f.identity.formId) return `#${f.identity.formId}`;
+  if (f.identity.formName) return `name="${f.identity.formName}"`;
+  return `Form ${f.index + 1}`;
+}
+
+function fieldDisplayLabel(f: SnapshotField): string {
+  if (f.labelText) return f.labelText;
+  if (f.key.startsWith('name:')) return f.key.slice('name:'.length);
+  if (f.key.startsWith('id:')) return f.key.slice('id:'.length);
+  if (f.key.startsWith('radio:')) return f.key.slice('radio:'.length);
+  return f.key;
+}
+
+function fieldTypeLabel(t: string): string {
+  switch (t) {
+    case 'select-one':
+      return 'select';
+    case 'select-multiple':
+      return 'multi-select';
+    case 'contenteditable':
+      return 'rich-text';
+    default:
+      return t;
+  }
+}
+
+async function sendToActiveTab<R>(msg: Message): Promise<R> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error('No active tab');
+  return browser.tabs.sendMessage(tab.id, msg) as Promise<R>;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[c] as string,
+  );
+}
+
+function toast(msg: string, error = false): void {
+  const t = document.createElement('div');
+  t.className = 'toast' + (error ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}

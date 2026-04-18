@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form Snapshot — Sample Test Page</title>
+    <style>
+      body {
+        font: 14px/1.4 system-ui, sans-serif;
+        max-width: 720px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #222;
+      }
+      h1 { margin-top: 0; }
+      h2 { margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+      form {
+        background: #f6f6f8;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 12px;
+      }
+      label { display: block; margin: 8px 0 2px; font-weight: 500; }
+      input[type="text"], input[type="email"], input[type="password"],
+      input[type="number"], input[type="tel"], input[type="url"], input[type="date"],
+      textarea, select {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #bbb;
+        border-radius: 4px;
+        font: inherit;
+      }
+      textarea { min-height: 60px; }
+      .row { display: flex; gap: 12px; }
+      .row > * { flex: 1; }
+      .checks label { display: inline-flex; gap: 4px; font-weight: normal; margin-right: 12px; }
+      .checks input { margin: 0; }
+      button { margin-top: 12px; padding: 6px 16px; }
+      .live { font-size: 12px; color: #666; margin-top: 4px; }
+      code { background: #eee; padding: 1px 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <h1>Form Snapshot — Test Page</h1>
+    <p>
+      Four forms below cover the common field types. Open the extension popup,
+      save a snapshot on each, then reload this page and Apply the snapshot.
+      Watch the <code>live</code> readouts under each input to confirm synthetic
+      <code>input</code>/<code>change</code> events fire (these prove
+      React-style controlled components would re-render).
+    </p>
+
+    <!-- Form 1: identified by id — should score 100 on match -->
+    <h2>1. Login (id="login-form")</h2>
+    <form id="login-form" action="/login" method="post">
+      <label for="login-email">Email</label>
+      <input id="login-email" name="email" type="email" autocomplete="off" />
+
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="off" />
+      <p class="live" data-live="login-password"></p>
+
+      <label><input type="checkbox" name="remember" /> Remember me</label>
+
+      <input type="hidden" name="csrf_token" value="abc123-hidden-token" />
+      <button type="button">Sign in</button>
+    </form>
+
+    <!-- Form 2: identified by name — varied field types -->
+    <h2>2. Profile (name="profile")</h2>
+    <form name="profile" action="/profile">
+      <div class="row">
+        <div>
+          <label for="first">First name</label>
+          <input id="first" name="first" type="text" />
+          <p class="live" data-live="first"></p>
+        </div>
+        <div>
+          <label for="last">Last name</label>
+          <input id="last" name="last" type="text" />
+        </div>
+      </div>
+
+      <label for="bio">Bio</label>
+      <textarea id="bio" name="bio"></textarea>
+
+      <label for="age">Age</label>
+      <input id="age" name="age" type="number" min="0" max="150" />
+
+      <label for="website">Website</label>
+      <input id="website" name="website" type="url" />
+
+      <label for="birth">Birthday</label>
+      <input id="birth" name="birth" type="date" />
+
+      <label for="country">Country</label>
+      <select id="country" name="country">
+        <option value="">— choose —</option>
+        <option value="us">United States</option>
+        <option value="ca">Canada</option>
+        <option value="uk">United Kingdom</option>
+        <option value="jp">Japan</option>
+      </select>
+
+      <label>Languages (pick any)</label>
+      <select name="languages" multiple size="4">
+        <option value="en">English</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="ja">Japanese</option>
+      </select>
+
+      <label>Plan</label>
+      <div class="checks">
+        <label><input type="radio" name="plan" value="free" /> Free</label>
+        <label><input type="radio" name="plan" value="pro" /> Pro</label>
+        <label><input type="radio" name="plan" value="enterprise" /> Enterprise</label>
+      </div>
+
+      <label>Notifications</label>
+      <div class="checks">
+        <label><input type="checkbox" name="notify_email" /> Email</label>
+        <label><input type="checkbox" name="notify_sms" /> SMS</label>
+        <label><input type="checkbox" name="notify_push" /> Push</label>
+      </div>
+
+      <label for="avatar">Avatar (file — will be skipped)</label>
+      <input id="avatar" name="avatar" type="file" />
+
+      <button type="button">Save profile</button>
+    </form>
+
+    <!-- Form 3: no id, no name — exercises structural fingerprint matching -->
+    <h2>3. Anonymous form (no id, no name)</h2>
+    <form action="/search">
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" />
+
+      <label for="sort">Sort by</label>
+      <select id="sort" name="sort">
+        <option value="relevance">Relevance</option>
+        <option value="date">Date</option>
+        <option value="popularity">Popularity</option>
+      </select>
+
+      <button type="button">Search</button>
+    </form>
+
+    <!-- Form 4: simulates a controlled-component flow.
+         When Apply fires input/change, the JS below mirrors value to state and
+         re-renders a label. If the label stays empty after Apply, the synthetic
+         events did not propagate. -->
+    <h2>4. Controlled-component style (name="controlled")</h2>
+    <form name="controlled">
+      <label for="ctrl-name">Controlled name</label>
+      <input id="ctrl-name" name="name" type="text" />
+      <p class="live">State says: <strong id="ctrl-state">(empty)</strong></p>
+
+      <label for="ctrl-agree"><input id="ctrl-agree" type="checkbox" name="agree" /> I agree</label>
+      <p class="live">State says: <strong id="ctrl-agree-state">false</strong></p>
+    </form>
+
+    <script>
+      // Mirror live inputs (proves synthetic events fire).
+      document.querySelectorAll('[data-live]').forEach((p) => {
+        const target = document.getElementById(p.getAttribute('data-live'));
+        if (!target) return;
+        const update = () => (p.textContent = 'input event → value: ' + target.value);
+        target.addEventListener('input', update);
+      });
+
+      // Controlled-style state mirroring.
+      const nameInput = document.getElementById('ctrl-name');
+      const nameState = document.getElementById('ctrl-state');
+      nameInput.addEventListener('input', () => {
+        nameState.textContent = nameInput.value || '(empty)';
+      });
+
+      const agreeInput = document.getElementById('ctrl-agree');
+      const agreeState = document.getElementById('ctrl-agree-state');
+      agreeInput.addEventListener('change', () => {
+        agreeState.textContent = String(agreeInput.checked);
+      });
+    </script>
+  </body>
+</html>
