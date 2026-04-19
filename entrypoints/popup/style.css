@@ -779,12 +779,29 @@ button.ghost-danger:hover:not(:disabled) {
 
 /* ---------- generator pane ---------- */
 
+.gen-backdrop {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  z-index: 29;
+  transition: opacity 200ms ease-out;
+}
+
+.gen-backdrop.open {
+  opacity: 1;
+}
+
 .gen-pane {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 100%;
+  width: 20rem;
+  max-width: calc(100% - 3rem);
   background: var(--bg);
   border-left: 1px solid var(--border);
   box-shadow: -0.5rem 0 1.5rem var(--shadow);
@@ -861,10 +878,7 @@ button.ghost-danger:hover:not(:disabled) {
 }
 
 .gen-pane-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: block;
   width: 100%;
   padding: 0.625rem 0.875rem;
   background: transparent;
@@ -873,40 +887,12 @@ button.ghost-danger:hover:not(:disabled) {
   color: var(--fg);
   cursor: pointer;
   text-align: left;
+  font-weight: 500;
 }
 
 .gen-pane-row:hover {
   background: var(--panel-hover);
   border-color: var(--border);
-}
-
-.gen-pane-row.is-applied {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.gen-pane-row-label {
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.gen-pane-row-sample {
-  color: var(--muted);
-  font-size: var(--fs-meta);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  text-align: right;
-}
-
-.gen-pane-footer {
-  padding: 0.625rem 1rem;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--muted);
-  font-size: var(--fs-meta);
-  text-align: center;
 }
 
 /* ---------- screen transitions ---------- */

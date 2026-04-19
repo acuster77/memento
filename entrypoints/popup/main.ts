@@ -1028,10 +1028,14 @@ function openGeneratorPane(
 ): void {
   closeGeneratorPane();
 
+  const backdrop = document.createElement('div');
+  backdrop.className = 'gen-backdrop';
+
   const pane = document.createElement('div');
   pane.className = 'gen-pane';
   const appHeader = document.querySelector('.app-header') as HTMLElement | null;
   const top = appHeader ? appHeader.getBoundingClientRect().bottom : 0;
+  backdrop.style.top = `${top}px`;
   pane.style.top = `${top}px`;
 
   const context = field.labelText || fieldDisplayLabel(field);
@@ -1044,7 +1048,6 @@ function openGeneratorPane(
       </div>
     </header>
     <div class="gen-pane-list" role="list"></div>
-    <footer class="gen-pane-footer">Click a generator to fill &middot; click again for a new value</footer>
   `;
 
   const list = pane.querySelector('.gen-pane-list') as HTMLDivElement;
@@ -1057,17 +1060,11 @@ function openGeneratorPane(
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'gen-pane-row';
-    row.innerHTML = `
-      <span class="gen-pane-row-label">${escapeHtml(opt.label)}</span>
-      <span class="gen-pane-row-sample" aria-hidden="true"></span>
-    `;
-    const sample = row.querySelector('.gen-pane-row-sample') as HTMLSpanElement;
+    row.textContent = opt.label;
     row.addEventListener('click', () => {
-      const value = fakerGenerate(opt.key);
-      input.value = value;
+      input.value = fakerGenerate(opt.key);
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      sample.textContent = value;
-      row.classList.add('is-applied');
+      closeGeneratorPane();
     });
     list.appendChild(row);
   }
@@ -1076,10 +1073,16 @@ function openGeneratorPane(
     'click',
     closeGeneratorPane,
   );
+  backdrop.addEventListener('click', closeGeneratorPane);
 
+  document.body.appendChild(backdrop);
   document.body.appendChild(pane);
   activePane = pane;
-  requestAnimationFrame(() => pane.classList.add('open'));
+  activeBackdrop = backdrop;
+  requestAnimationFrame(() => {
+    pane.classList.add('open');
+    backdrop.classList.add('open');
+  });
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeGeneratorPane();
@@ -1089,6 +1092,8 @@ function openGeneratorPane(
     document.removeEventListener('keydown', onKey);
   };
 }
+
+let activeBackdrop: HTMLElement | null = null;
 
 function closeGeneratorPane(): void {
   if (activePaneCleanup) {
@@ -1100,6 +1105,12 @@ function closeGeneratorPane(): void {
     pane.classList.remove('open');
     setTimeout(() => pane.remove(), 220);
     activePane = null;
+  }
+  if (activeBackdrop) {
+    const b = activeBackdrop;
+    b.classList.remove('open');
+    setTimeout(() => b.remove(), 220);
+    activeBackdrop = null;
   }
 }
 
