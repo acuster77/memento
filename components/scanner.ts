@@ -246,19 +246,78 @@ function stripQuery(url: string): string {
   }
 }
 
+/** Build the shortest selector that uniquely resolves to `el`.
+ *
+ * Strategy: if `#id` alone is unique, return it. Otherwise walk from the
+ * element toward the root, describing each level with the most stable
+ * identifier it has (id → data-testid/data-test/data-cy/data-qa → name →
+ * non-generated classes → `:nth-of-type`), and stop as soon as the
+ * accumulated descendant path uniquely matches. This keeps selectors
+ * specific yet resilient to sibling reordering and cosmetic refactors. */
 export function cssPath(el: Element): string {
+  if (el.id) {
+    const sel = `#${CSS.escape(el.id)}`;
+    if (isUnique(sel, el)) return sel;
+  }
   const parts: string[] = [];
   let node: Element | null = el;
-  while (node && node !== document.body && node.parentElement) {
-    const parent = node.parentElement;
-    const tag = node.tagName.toLowerCase();
-    const currentNode = node;
-    const siblings = Array.from(parent.children).filter((c) => c.tagName === currentNode.tagName);
-    const index = siblings.indexOf(currentNode) + 1;
-    parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag);
-    node = parent;
+  while (node && node !== document.body && node !== document.documentElement) {
+    parts.unshift(describeNode(node));
+    const sel = parts.join(' > ');
+    if (isUnique(sel, el)) return sel;
+    node = node.parentElement;
   }
-  return parts.join(' > ');
+  return parts.join(' > ') || el.tagName.toLowerCase();
+}
+
+const STABLE_ATTRS = ['data-testid', 'data-test', 'data-cy', 'data-qa'];
+
+function describeNode(el: Element): string {
+  const tag = el.tagName.toLowerCase();
+  if (el.id) return `${tag}#${CSS.escape(el.id)}`;
+  for (const attr of STABLE_ATTRS) {
+    const v = el.getAttribute(attr);
+    if (v) return `${tag}[${attr}="${escapeAttr(v)}"]`;
+  }
+  const name = el.getAttribute('name');
+  if (name) return `${tag}[name="${escapeAttr(name)}"]`;
+  const stableClasses = Array.from(el.classList).filter(isStableClass);
+  if (stableClasses.length) {
+    return `${tag}.${stableClasses.map((c) => CSS.escape(c)).join('.')}`;
+  }
+  const parent = el.parentElement;
+  if (parent) {
+    const siblings = Array.from(parent.children).filter((c) => c.tagName === el.tagName);
+    if (siblings.length > 1) {
+      return `${tag}:nth-of-type(${siblings.indexOf(el) + 1})`;
+    }
+  }
+  return tag;
+}
+
+function isUnique(selector: string, el: Element): boolean {
+  try {
+    const hits = document.querySelectorAll(selector);
+    return hits.length === 1 && hits[0] === el;
+  } catch {
+    return false;
+  }
+}
+
+function escapeAttr(v: string): string {
+  return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** Reject classes that look framework-generated: Tailwind variants
+ * (`hover:`, `md:`), CSS Modules / CSS-in-JS hashes, and long digit runs
+ * typical of content-hashed chunks. */
+function isStableClass(c: string): boolean {
+  if (!c) return false;
+  if (c.includes(':') || c.includes('[') || c.includes(']')) return false;
+  if (/[0-9]{3,}/.test(c)) return false;
+  if (/^[a-z0-9]+-[0-9a-f]{5,}$/i.test(c)) return false;
+  if (/_[A-Za-z0-9]{5,}$/.test(c)) return false;
+  return true;
 }
 
 function computeFingerprint(form: HTMLFormElement): string {
