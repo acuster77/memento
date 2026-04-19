@@ -215,7 +215,14 @@ async function renderForms(): Promise<void> {
     screen.appendChild(p);
     return;
   }
-  for (const form of scan.forms) {
+  const ranked = scan.forms
+    .map((form, originalIndex) => ({
+      form,
+      originalIndex,
+      matchCount: scoreMatches(all, form.identity).length,
+    }))
+    .sort((a, b) => b.matchCount - a.matchCount || a.originalIndex - b.originalIndex);
+  for (const { form } of ranked) {
     screen.appendChild(renderFormCard(form, all));
   }
 }
