@@ -596,6 +596,10 @@ async function openSavePreview(form: DetectedForm): Promise<void> {
   labelInput?.select();
 }
 
+function generateDefaultLabel(selector: string): string {
+  return `${selector} ${Math.floor(Date.now() / 1000)}`;
+}
+
 async function backToList(): Promise<void> {
   await navigate('back', renderCurrentTab);
 }
@@ -632,7 +636,7 @@ function renderSavePreview(
     headerTitle: 'New Snapshot',
     headerMeta: formTitle(form),
     selector: form.identity.domPath,
-    initialLabel: `${form.identity.domPath} ${Math.floor(Date.now() / 1000)}`,
+    initialLabel: generateDefaultLabel(form.identity.domPath),
     confirmButtonText: 'Save snapshot',
     fields,
     hasPassword: has.hasPassword,
@@ -720,7 +724,10 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   labelField.className = 'field';
   labelField.innerHTML = `
     <span>Label <em>required</em></span>
-    <input type="text" id="snap-label" autocomplete="off" placeholder="e.g. dev-admin-login" />
+    <div class="label-row">
+      <input type="text" id="snap-label" autocomplete="off" placeholder="e.g. dev-admin-login" />
+      <button type="button" class="gen-btn" title="Regenerate default label">Generate</button>
+    </div>
   `;
   view.appendChild(labelField);
 
@@ -822,6 +829,19 @@ function renderPreviewForm(config: PreviewFormConfig): void {
     confirmBtn.disabled = labelInput.value.trim().length === 0;
   };
   validate();
+
+  const genBtn = view.querySelector('.gen-btn') as HTMLButtonElement;
+  if (config.selector) {
+    genBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      labelInput.value = generateDefaultLabel(config.selector as string);
+      labelInput.focus();
+      labelInput.select();
+      validate();
+    });
+  } else {
+    genBtn.disabled = true;
+  }
 
   labelInput.addEventListener('input', validate);
   includePwdInput.addEventListener('change', repaintTable);

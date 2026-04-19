@@ -509,6 +509,22 @@ button.ghost-danger:hover:not(:disabled) {
   outline: none;
 }
 
+.label-row {
+  display: flex;
+  gap: 0.375rem;
+  align-items: stretch;
+}
+
+.label-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.gen-btn {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+
 .field input:focus {
   border-color: var(--accent);
 }
