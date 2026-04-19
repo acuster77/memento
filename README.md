@@ -1,9 +1,8 @@
-# Memento
+# Momento Web Form Filler
 
 A browser extension (Chrome / Edge / Firefox) that captures the state of an
 entire HTML `<form>` and restores any saved snapshot back into the form
-later. Named after the *Memento* software design pattern — capture and
-restore object state without exposing its internals.
+later.
 
 Built as a QA and developer tool so you don't re-type the same form values
 every time you cycle through a test flow.

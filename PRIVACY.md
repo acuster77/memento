@@ -2,11 +2,11 @@
 
 _Last updated: 2026-04-18_
 
-Memento is a browser extension that lets you capture and restore the state of
+Momento is a browser extension that lets you capture and restore the state of
 HTML forms on websites you visit. This policy describes what data the
 extension handles and where it goes.
 
-## What Memento stores
+## What Momento stores
 
 - **Form snapshots** you explicitly save: the field values, field types, labels,
   the form's identity signals (DOM id, name, action URL, structural fingerprint,
@@ -17,13 +17,13 @@ All of this is stored locally on your device using the browser's standard
 `chrome.storage.local` / `browser.storage.local` API. It never leaves your
 machine.
 
-## What Memento does NOT do
+## What Momento does NOT do
 
 - **No network requests.** The extension declares no `host_permissions` for
   remote origins and makes no `fetch`, `XMLHttpRequest`, or WebSocket calls.
   You can verify this by inspecting the source code or the network tab.
 - **No analytics, telemetry, tracking, or advertising identifiers.**
-- **No sync across devices.** Memento deliberately uses `storage.local`, not
+- **No sync across devices.** Momento deliberately uses `storage.local`, not
   `storage.sync`. If you want your snapshots on another machine, use
   **Export JSON** to download them and import on the other browser.
 - **No sharing with third parties.** There are no third parties involved.
@@ -37,7 +37,7 @@ containing secrets in the UI.
 
 Because snapshots are stored as plaintext JSON in `storage.local`, any
 process on your computer with access to your browser profile can read them.
-Do **not** store production credentials in Memento.
+Do **not** store production credentials in Momento.
 
 ## Hidden and read-only fields
 

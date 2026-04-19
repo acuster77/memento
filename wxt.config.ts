@@ -2,12 +2,12 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   manifest: {
-    name: 'Memento',
+    name: 'Momento Web Form Filler',
     description: 'Capture and restore HTML form state - a QA/dev tool.',
     version: '0.1.0',
     permissions: ['storage', 'activeTab'],
     action: {
-      default_title: 'Memento',
+      default_title: 'Momento',
     },
     icons: {
       '16': 'icons/16.png',
