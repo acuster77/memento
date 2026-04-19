@@ -741,22 +741,36 @@ function renderPreviewForm(config: PreviewFormConfig): void {
 
   const toggles = document.createElement('div');
   toggles.className = 'toggle-group';
-  toggles.style.display =
-    config.hasPassword || config.hasHidden || config.hasReadonly ? '' : 'none';
-  toggles.innerHTML = `
-    <label class="toggle" style="display:${config.hasPassword ? '' : 'none'}">
-      <input type="checkbox" id="snap-include-pwd" />
-      <span>Include password fields</span>
-    </label>
-    <label class="toggle" style="display:${config.hasHidden ? '' : 'none'}">
-      <input type="checkbox" id="snap-include-hidden" />
-      <span>Include hidden fields</span>
-    </label>
-    <label class="toggle" style="display:${config.hasReadonly ? '' : 'none'}">
-      <input type="checkbox" id="snap-include-readonly" />
-      <span>Include readonly fields</span>
-    </label>
-  `;
+  const toggleRows: string[] = [];
+  if (config.hasPassword) {
+    toggleRows.push(`
+      <label class="toggle">
+        <input type="checkbox" id="snap-include-pwd" />
+        <span>Include password fields</span>
+      </label>
+    `);
+  }
+  if (config.hasHidden) {
+    toggleRows.push(`
+      <label class="toggle">
+        <input type="checkbox" id="snap-include-hidden" />
+        <span>Include hidden fields</span>
+      </label>
+    `);
+  }
+  if (config.hasReadonly) {
+    toggleRows.push(`
+      <label class="toggle">
+        <input type="checkbox" id="snap-include-readonly" />
+        <span>Include readonly fields</span>
+      </label>
+    `);
+  }
+  if (toggleRows.length === 0) {
+    toggles.style.display = 'none';
+  } else {
+    toggles.innerHTML = toggleRows.join('');
+  }
   view.appendChild(toggles);
 
   const previewPanel = document.createElement('div');
@@ -780,16 +794,16 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   screen.appendChild(view);
 
   const labelInput = view.querySelector('#snap-label') as HTMLInputElement;
-  const includePwdInput = view.querySelector('#snap-include-pwd') as HTMLInputElement;
-  const includeHiddenInput = view.querySelector('#snap-include-hidden') as HTMLInputElement;
-  const includeReadonlyInput = view.querySelector('#snap-include-readonly') as HTMLInputElement;
+  const includePwdInput = view.querySelector('#snap-include-pwd') as HTMLInputElement | null;
+  const includeHiddenInput = view.querySelector('#snap-include-hidden') as HTMLInputElement | null;
+  const includeReadonlyInput = view.querySelector('#snap-include-readonly') as HTMLInputElement | null;
   const confirmBtn = footer.querySelector('.confirm') as HTMLButtonElement;
   const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
 
   labelInput.value = config.initialLabel;
-  includePwdInput.checked = config.initialIncludePwd;
-  includeHiddenInput.checked = config.initialIncludeHidden;
-  includeReadonlyInput.checked = config.initialIncludeReadonly;
+  if (includePwdInput) includePwdInput.checked = config.initialIncludePwd;
+  if (includeHiddenInput) includeHiddenInput.checked = config.initialIncludeHidden;
+  if (includeReadonlyInput) includeReadonlyInput.checked = config.initialIncludeReadonly;
 
   const editors = new Map<
     string,
@@ -797,9 +811,9 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   >();
 
   const fieldIsIncluded = (f: SnapshotField): boolean => {
-    if (f.type === 'password' && !includePwdInput.checked) return false;
-    if (f.type === 'hidden' && !includeHiddenInput.checked) return false;
-    if (f.readonly && !includeReadonlyInput.checked) return false;
+    if (f.type === 'password' && !(includePwdInput?.checked ?? false)) return false;
+    if (f.type === 'hidden' && !(includeHiddenInput?.checked ?? false)) return false;
+    if (f.readonly && !(includeReadonlyInput?.checked ?? false)) return false;
     return true;
   };
 
@@ -855,9 +869,9 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   }
 
   labelInput.addEventListener('input', validate);
-  includePwdInput.addEventListener('change', repaintTable);
-  includeHiddenInput.addEventListener('change', repaintTable);
-  includeReadonlyInput.addEventListener('change', repaintTable);
+  includePwdInput?.addEventListener('change', repaintTable);
+  includeHiddenInput?.addEventListener('change', repaintTable);
+  includeReadonlyInput?.addEventListener('change', repaintTable);
   cancelBtn.addEventListener('click', backToList);
   confirmBtn.addEventListener('click', async () => {
     const label = labelInput.value.trim();
@@ -871,9 +885,9 @@ function renderPreviewForm(config: PreviewFormConfig): void {
     }
     const res = await config.onConfirm({
       label,
-      includePwd: includePwdInput.checked,
-      includeHidden: includeHiddenInput.checked,
-      includeReadonly: includeReadonlyInput.checked,
+      includePwd: includePwdInput?.checked ?? false,
+      includeHidden: includeHiddenInput?.checked ?? false,
+      includeReadonly: includeReadonlyInput?.checked ?? false,
       editedFields,
     });
     if (res.ok) {
