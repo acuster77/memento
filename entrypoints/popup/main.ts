@@ -1,5 +1,9 @@
 import { browser } from 'wxt/browser';
-import { generate as fakerGenerate, rankedFakerOptions } from '../../components/faker';
+import {
+  BEST_MATCH_SCORE,
+  generate as fakerGenerate,
+  rankedFakerOptions,
+} from '../../components/faker';
 import { SnapshotStore } from '../../utils/storage';
 import type {
   ApplyResponse,
@@ -1095,7 +1099,11 @@ function openGeneratorPane(
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'gen-pane-row';
-    row.textContent = opt.label;
+    const isBest = opt.score >= BEST_MATCH_SCORE;
+    row.innerHTML = `
+      <span class="gen-pane-row-label">${escapeHtml(opt.label)}</span>
+      ${isBest ? '<span class="gen-pane-row-badge">Best match</span>' : ''}
+    `;
     row.addEventListener('click', () => {
       input.value = fakerGenerate(opt.key);
       input.dispatchEvent(new Event('input', { bubbles: true }));

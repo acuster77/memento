@@ -923,7 +923,10 @@ button.ghost-danger:hover:not(:disabled) {
 }
 
 .gen-pane-row {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
   width: 100%;
   padding: 0.625rem 0.875rem;
   background: transparent;
@@ -938,6 +941,25 @@ button.ghost-danger:hover:not(:disabled) {
 .gen-pane-row:hover {
   background: var(--panel-hover);
   border-color: var(--border);
+}
+
+.gen-pane-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gen-pane-row-badge {
+  flex-shrink: 0;
+  font-size: var(--fs-badge);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03125em;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 0.25rem;
+  color: var(--accent-fg);
+  background: var(--accent);
 }
 
 .gen-pane-options {

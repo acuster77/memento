@@ -119,11 +119,20 @@ function tokenize(s: string): string[] {
     .filter((t) => t.length > 0);
 }
 
+export type RankedFakerOption = {
+  key: FakerKey;
+  label: string;
+  score: number;
+};
+
+/** Threshold at which a generator counts as a strong match for the field. */
+export const BEST_MATCH_SCORE = 10;
+
 export function rankedFakerOptions(hint: {
   type?: string;
   label?: string;
   fieldKey?: string;
-}): { key: FakerKey; label: string }[] {
+}): RankedFakerOption[] {
   const tokens = [
     ...tokenize(hint.label ?? ''),
     ...(hint.fieldKey ? tokenize(hint.fieldKey.replace(/^[a-z]+:/, '')) : []),
@@ -136,7 +145,7 @@ export function rankedFakerOptions(hint: {
     score: scoreKey(opt.key, tokens, typeHint),
   }))
     .sort((a, b) => b.score - a.score || a.i - b.i)
-    .map(({ opt }) => opt);
+    .map(({ opt, score }) => ({ ...opt, score }));
 }
 
 function scoreKey(key: FakerKey, tokens: string[], typeHint?: FakerKey): number {
