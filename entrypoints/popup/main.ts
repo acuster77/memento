@@ -775,11 +775,26 @@ function renderPreviewForm(config: PreviewFormConfig): void {
 
   const previewPanel = document.createElement('div');
   previewPanel.className = 'preview-panel';
+  const headEl = document.createElement('div');
+  headEl.className = 'preview-panel-head';
   const titleEl = document.createElement('div');
   titleEl.className = 'preview-title';
+  const generateAllBtn = document.createElement('button');
+  generateAllBtn.type = 'button';
+  generateAllBtn.className = 'generate-all-btn';
+  generateAllBtn.innerHTML = `
+    <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 L13.5 9 L19.5 10.5 L13.5 12 L12 18 L10.5 12 L4.5 10.5 L10.5 9 Z"/>
+      <path d="M18.5 14 L19.25 16.25 L21.5 17 L19.25 17.75 L18.5 20 L17.75 17.75 L15.5 17 L17.75 16.25 Z"/>
+    </svg>
+    <span>Generate all</span>
+    <span class="generate-all-caret" aria-hidden="true">&#x25BE;</span>
+  `;
+  headEl.appendChild(titleEl);
+  headEl.appendChild(generateAllBtn);
   const gridEl = document.createElement('div');
   gridEl.className = 'preview-grid';
-  previewPanel.appendChild(titleEl);
+  previewPanel.appendChild(headEl);
   previewPanel.appendChild(gridEl);
   view.appendChild(previewPanel);
 
@@ -867,6 +882,45 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   } else {
     genBtn.disabled = true;
   }
+
+  generateAllBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openActionMenu(generateAllBtn, [
+      {
+        label: 'Fill empty fields',
+        action: () =>
+          generateAllFields(config.fields, fieldIsIncluded, editors, {
+            overwrite: false,
+            randomizeChoices: false,
+          }),
+      },
+      {
+        label: 'Fill empty + randomize selects/radios',
+        action: () =>
+          generateAllFields(config.fields, fieldIsIncluded, editors, {
+            overwrite: false,
+            randomizeChoices: true,
+          }),
+      },
+      {
+        label: 'Overwrite all text fields',
+        action: () =>
+          generateAllFields(config.fields, fieldIsIncluded, editors, {
+            overwrite: true,
+            randomizeChoices: false,
+          }),
+      },
+      {
+        label: 'Overwrite all + randomize selects/radios',
+        action: () =>
+          generateAllFields(config.fields, fieldIsIncluded, editors, {
+            overwrite: true,
+            randomizeChoices: true,
+          }),
+      },
+    ]);
+  });
 
   labelInput.addEventListener('input', validate);
   includePwdInput?.addEventListener('change', repaintTable);
@@ -1125,6 +1179,62 @@ function closeGeneratorPane(): void {
     b.classList.remove('open');
     setTimeout(() => b.remove(), 220);
     activeBackdrop = null;
+  }
+}
+
+type GenerateAllMode = {
+  overwrite: boolean;
+  randomizeChoices: boolean;
+};
+
+function generateAllFields(
+  fields: SnapshotField[],
+  fieldIsIncluded: (f: SnapshotField) => boolean,
+  editors: Map<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  mode: GenerateAllMode,
+): void {
+  for (const f of fields) {
+    if (!fieldIsIncluded(f)) continue;
+    if (f.readonly) continue;
+    const editor = editors.get(f.key);
+    if (!editor) continue;
+
+    if (editor instanceof HTMLSelectElement) {
+      if (!mode.randomizeChoices) continue;
+      const opts = Array.from(editor.options);
+      if (opts.length === 0) continue;
+      if (editor.multiple) {
+        const count = 1 + Math.floor(Math.random() * Math.min(3, opts.length));
+        const shuffled = [...opts].sort(() => Math.random() - 0.5);
+        for (const o of opts) o.selected = false;
+        for (let i = 0; i < count; i++) shuffled[i].selected = true;
+      } else {
+        const valued = opts.filter((o) => o.value !== '');
+        const pool = valued.length > 0 ? valued : opts;
+        editor.value = pool[Math.floor(Math.random() * pool.length)].value;
+      }
+      editor.dispatchEvent(new Event('change', { bubbles: true }));
+      continue;
+    }
+
+    if (editor instanceof HTMLInputElement && editor.type === 'checkbox') {
+      if (!mode.randomizeChoices) continue;
+      editor.checked = Math.random() < 0.5;
+      editor.dispatchEvent(new Event('change', { bubbles: true }));
+      continue;
+    }
+
+    // Text-like input or textarea.
+    if (!mode.overwrite && editor.value.trim() !== '') continue;
+    const ranked = rankedFakerOptions({
+      type: f.type,
+      label: f.labelText,
+      fieldKey: f.key,
+    });
+    const top = ranked[0];
+    if (!top) continue;
+    editor.value = fakerGenerate(top.key);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 
