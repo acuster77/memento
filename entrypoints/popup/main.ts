@@ -886,40 +886,7 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   generateAllBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openActionMenu(generateAllBtn, [
-      {
-        label: 'Fill empty fields',
-        action: () =>
-          generateAllFields(config.fields, fieldIsIncluded, editors, {
-            overwrite: false,
-            randomizeChoices: false,
-          }),
-      },
-      {
-        label: 'Fill empty + randomize selects/radios',
-        action: () =>
-          generateAllFields(config.fields, fieldIsIncluded, editors, {
-            overwrite: false,
-            randomizeChoices: true,
-          }),
-      },
-      {
-        label: 'Overwrite all text fields',
-        action: () =>
-          generateAllFields(config.fields, fieldIsIncluded, editors, {
-            overwrite: true,
-            randomizeChoices: false,
-          }),
-      },
-      {
-        label: 'Overwrite all + randomize selects/radios',
-        action: () =>
-          generateAllFields(config.fields, fieldIsIncluded, editors, {
-            overwrite: true,
-            randomizeChoices: true,
-          }),
-      },
-    ]);
+    openGenerateAllPane(config.fields, fieldIsIncluded, editors);
   });
 
   labelInput.addEventListener('input', validate);
@@ -1162,6 +1129,91 @@ function openGeneratorPane(
 }
 
 let activeBackdrop: HTMLElement | null = null;
+
+function openGenerateAllPane(
+  fields: SnapshotField[],
+  fieldIsIncluded: (f: SnapshotField) => boolean,
+  editors: Map<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+): void {
+  closeGeneratorPane();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'gen-backdrop';
+
+  const pane = document.createElement('div');
+  pane.className = 'gen-pane';
+  const appHeader = document.querySelector('.app-header') as HTMLElement | null;
+  const top = appHeader ? appHeader.getBoundingClientRect().bottom : 0;
+  backdrop.style.top = `${top}px`;
+  pane.style.top = `${top}px`;
+
+  pane.innerHTML = `
+    <header class="gen-pane-header">
+      <button type="button" class="gen-pane-close" aria-label="Close">&#x2715;</button>
+      <div class="gen-pane-title">
+        <span class="gen-pane-eyebrow">Generate</span>
+        <strong>All fields</strong>
+      </div>
+    </header>
+    <div class="gen-pane-options">
+      <label class="gen-pane-option">
+        <input type="checkbox" id="gen-all-overwrite" />
+        <div class="gen-pane-option-text">
+          <strong>Overwrite existing values</strong>
+          <span>Replace text in fields that already have a value</span>
+        </div>
+      </label>
+      <label class="gen-pane-option">
+        <input type="checkbox" id="gen-all-randomize" />
+        <div class="gen-pane-option-text">
+          <strong>Randomize selects, radios, checkboxes</strong>
+          <span>Pick a random option from each choice field</span>
+        </div>
+      </label>
+    </div>
+    <footer class="gen-pane-footer-bar">
+      <button type="button" class="cancel">Cancel</button>
+      <button type="button" class="apply primary">Generate</button>
+    </footer>
+  `;
+
+  (pane.querySelector('.gen-pane-close') as HTMLButtonElement).addEventListener(
+    'click',
+    closeGeneratorPane,
+  );
+  (pane.querySelector('.cancel') as HTMLButtonElement).addEventListener(
+    'click',
+    closeGeneratorPane,
+  );
+  backdrop.addEventListener('click', closeGeneratorPane);
+
+  const overwriteCb = pane.querySelector('#gen-all-overwrite') as HTMLInputElement;
+  const randomizeCb = pane.querySelector('#gen-all-randomize') as HTMLInputElement;
+  (pane.querySelector('.apply') as HTMLButtonElement).addEventListener('click', () => {
+    generateAllFields(fields, fieldIsIncluded, editors, {
+      overwrite: overwriteCb.checked,
+      randomizeChoices: randomizeCb.checked,
+    });
+    closeGeneratorPane();
+  });
+
+  document.body.appendChild(backdrop);
+  document.body.appendChild(pane);
+  activePane = pane;
+  activeBackdrop = backdrop;
+  requestAnimationFrame(() => {
+    pane.classList.add('open');
+    backdrop.classList.add('open');
+  });
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeGeneratorPane();
+  };
+  document.addEventListener('keydown', onKey);
+  activePaneCleanup = () => {
+    document.removeEventListener('keydown', onKey);
+  };
+}
 
 function closeGeneratorPane(): void {
   if (activePaneCleanup) {
