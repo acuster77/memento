@@ -219,6 +219,9 @@ function findPrecedingSiblingLabel(el: Element): string | undefined {
   let prev: Element | null = el.previousElementSibling;
   while (prev) {
     if (prev.tagName === 'LABEL' && !prev.hasAttribute('for')) {
+      // A label that wraps its own form control belongs to that control,
+      // not to us — stop so we don't steal a sibling field's label.
+      if (prev.querySelector('input, select, textarea')) break;
       const text = prev.textContent?.trim();
       if (text) return text;
     }
