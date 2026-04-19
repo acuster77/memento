@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { generate as fakerGenerate, rankedFakerOptions } from '../../components/faker';
 import { SnapshotStore } from '../../utils/storage';
 import type {
   ApplyResponse,
@@ -826,6 +827,9 @@ function renderPreviewForm(config: PreviewFormConfig): void {
       const { wrapper, input } = createEditor(f);
       editors.set(f.key, input);
       valueEl.appendChild(wrapper);
+      if (canFakeField(f, input)) {
+        valueEl.appendChild(buildFakerButton(f, input));
+      }
 
       gridEl.appendChild(nameEl);
       gridEl.appendChild(valueEl);
@@ -980,6 +984,53 @@ function createEditor(f: SnapshotField): EditorResult {
       return { wrapper: inp, input: inp };
     }
   }
+}
+
+function canFakeField(
+  f: SnapshotField,
+  input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+): boolean {
+  if (input instanceof HTMLSelectElement) return false;
+  if (input instanceof HTMLInputElement && input.type === 'checkbox') return false;
+  if (f.readonly) return false;
+  return true;
+}
+
+function buildFakerButton(
+  field: SnapshotField,
+  input: HTMLInputElement | HTMLTextAreaElement,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'faker-btn';
+  btn.title = 'Fill with generated data';
+  btn.setAttribute('aria-label', 'Fill with generated data');
+  btn.innerHTML = `
+    <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 L13.5 9 L19.5 10.5 L13.5 12 L12 18 L10.5 12 L4.5 10.5 L10.5 9 Z"/>
+      <path d="M18.5 14 L19.25 16.25 L21.5 17 L19.25 17.75 L18.5 20 L17.75 17.75 L15.5 17 L17.75 16.25 Z"/>
+    </svg>
+  `;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ranked = rankedFakerOptions({
+      type: field.type,
+      label: field.labelText,
+      fieldKey: field.key,
+    });
+    openActionMenu(
+      btn,
+      ranked.map((opt) => ({
+        label: opt.label,
+        action: () => {
+          input.value = fakerGenerate(opt.key);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+      })),
+    );
+  });
+  return btn;
 }
 
 function readEditor(

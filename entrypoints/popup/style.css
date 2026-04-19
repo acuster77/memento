@@ -393,6 +393,8 @@ button.ghost-danger:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   min-width: 9rem;
+  max-height: 20rem;
+  overflow-y: auto;
 }
 
 .menu-popover button {
@@ -618,6 +620,47 @@ button.ghost-danger:hover:not(:disabled) {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 0.25rem;
+}
+
+.pv-value > .edit-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.faker-btn {
+  flex-shrink: 0;
+  width: 1.625rem;
+  height: 1.625rem;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.3125rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.faker-btn .btn-icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  fill: currentColor;
+  stroke: none;
+}
+
+.faker-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.pv-value.pv-type-textarea .faker-btn,
+.pv-value.pv-type-contenteditable .faker-btn {
+  align-self: start;
+  margin-top: 0.1875rem;
 }
 
 /* Text-like inputs share this visual rhythm. */
