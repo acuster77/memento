@@ -593,6 +593,7 @@ async function openSavePreview(form: DetectedForm): Promise<void> {
   // behaviour on focus does not interact with the running animation.
   const labelInput = document.getElementById('snap-label') as HTMLInputElement | null;
   labelInput?.focus({ preventScroll: true });
+  labelInput?.select();
 }
 
 async function backToList(): Promise<void> {
@@ -631,7 +632,7 @@ function renderSavePreview(
     headerTitle: 'New Snapshot',
     headerMeta: formTitle(form),
     selector: form.identity.domPath,
-    initialLabel: '',
+    initialLabel: `${form.identity.domPath} ${Math.floor(Date.now() / 1000)}`,
     confirmButtonText: 'Save snapshot',
     fields,
     hasPassword: has.hasPassword,
