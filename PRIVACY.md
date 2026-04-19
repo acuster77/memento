@@ -35,9 +35,17 @@ capture them, you must explicitly tick the "Include password fields" toggle
 on the save-preview screen; the resulting snapshot is then flagged as
 containing secrets in the UI.
 
-Because snapshots are stored as plaintext JSON in `storage.local`, any
-process on your computer with access to your browser profile can read them.
-Do **not** store production credentials in Momento.
+Snapshots are stored as **plaintext JSON** in `storage.local`. They are
+**not encrypted at rest**: any process on your computer with access to your
+browser profile directory — other extensions with the `storage` permission,
+local malware, or anyone who can read the profile on disk — can read them.
+
+Momento is a **QA and developer tool**, not a password manager. It does not
+provide the protections a password manager does: no master-password
+encryption, no device-bound key, no lockout after inactivity, no zero-
+knowledge sync. Do **not** store production credentials, real customer
+data, or any secret you would be uncomfortable finding in an unencrypted
+JSON file on disk. Use real test accounts or throwaway fixtures.
 
 ## Hidden and read-only fields
 

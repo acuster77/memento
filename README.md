@@ -98,8 +98,9 @@ public/icons/             PNG icons included in the built extension
 
 See [PRIVACY.md](./PRIVACY.md) for the full disclosure. The short version:
 snapshots are stored as plaintext JSON in `chrome.storage.local` / the
-equivalent on Firefox. Nothing is transmitted. Do **not** store
-production credentials.
+equivalent on Firefox — **not encrypted at rest**. Nothing is transmitted.
+Momento is a QA tool, not a password manager; do **not** store production
+credentials or real customer data.
 
 ## Out of scope
 
