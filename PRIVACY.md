@@ -10,7 +10,7 @@ extension handles and where it goes.
 
 - **Form snapshots** you explicitly save: the field values, field types, labels,
   the form's identity signals (DOM id, name, action URL, structural fingerprint,
-  DOM path), the page's origin and path, and any label/category you type in.
+  DOM path), the page's origin and path, and the label you type in.
 - **Schema metadata** used to upgrade older saved data safely.
 
 All of this is stored locally on your device using the browser's standard

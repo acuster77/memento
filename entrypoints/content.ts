@@ -55,7 +55,6 @@ async function handle(
     const snapshot: Snapshot = {
       id: crypto.randomUUID(),
       label: msg.options.label,
-      category: msg.options.category,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       form: buildIdentity(form),

@@ -32,7 +32,6 @@ export type SnapshotFlags = {
 export type Snapshot = {
   id: string;
   label: string;
-  category?: string;
   createdAt: number;
   updatedAt: number;
   form: FormIdentity;
@@ -52,7 +51,6 @@ export type DetectedForm = {
 
 export type SaveOptions = {
   label: string;
-  category?: string;
   includePasswords: boolean;
 };
 

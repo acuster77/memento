@@ -246,52 +246,10 @@ async function renderLibrary(): Promise<void> {
     return;
   }
 
-  const categories = collectCategories(all);
-  const hasUncategorized = all.some((s) => !s.category);
-
-  if (categories.length > 0 || hasUncategorized) {
-    if (
-      categoryFilter &&
-      categoryFilter !== '__uncategorized__' &&
-      !categories.includes(categoryFilter)
-    ) {
-      categoryFilter = '';
-    }
-    if (categoryFilter === '__uncategorized__' && !hasUncategorized) {
-      categoryFilter = '';
-    }
-
-    const filterRow = document.createElement('div');
-    filterRow.className = 'filter-row';
-    filterRow.innerHTML = '<span class="filter-label">Category</span>';
-    const sel = document.createElement('select');
-    sel.innerHTML =
-      `<option value="">All</option>` +
-      categories
-        .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
-        .join('') +
-      (hasUncategorized ? `<option value="__uncategorized__">Uncategorized</option>` : '');
-    sel.value = categoryFilter;
-    sel.addEventListener('change', () => {
-      categoryFilter = sel.value;
-      renderLibrary();
-    });
-    filterRow.appendChild(sel);
-    screen.appendChild(filterRow);
-  }
-
-  const filtered = applyCategoryFilter(all, categoryFilter);
-  if (filtered.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'empty inline';
-    p.textContent = 'No snapshots match this filter.';
-    screen.appendChild(p);
-  } else {
-    const ul = document.createElement('ul');
-    ul.className = 'all-list';
-    for (const s of filtered) ul.appendChild(renderAllItem(s, forms));
-    screen.appendChild(ul);
-  }
+  const ul = document.createElement('ul');
+  ul.className = 'all-list';
+  for (const s of all) ul.appendChild(renderAllItem(s, forms));
+  screen.appendChild(ul);
 
   screen.appendChild(renderDataTools(all));
 }
@@ -315,8 +273,11 @@ function renderFormCard(form: DetectedForm, all: Snapshot[]): HTMLElement {
       <strong>${escapeHtml(title)}</strong>
       <span class="meta">${form.fieldCount} field${form.fieldCount === 1 ? '' : 's'}</span>
     </header>
-    <button class="save primary">New Snapshot</button>
+    <div class="selector-line" title="Selector used to re-find this form">${escapeHtml(form.identity.domPath)}</div>
     <ul class="matches"></ul>
+    <div class="card-actions">
+      <button class="save primary">New Snapshot</button>
+    </div>
   `;
 
   (el.querySelector('.save') as HTMLButtonElement).addEventListener('click', () =>
@@ -362,21 +323,6 @@ function renderMatch(s: Snapshot, formIndex: number): HTMLLIElement {
     ]);
   });
   return li;
-}
-
-// Persists across rerenders. '' = all. '__uncategorized__' = no category.
-let categoryFilter = '';
-
-function collectCategories(all: Snapshot[]): string[] {
-  const set = new Set<string>();
-  for (const s of all) if (s.category) set.add(s.category);
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
-function applyCategoryFilter(all: Snapshot[], filter: string): Snapshot[] {
-  if (!filter) return all;
-  if (filter === '__uncategorized__') return all.filter((s) => !s.category);
-  return all.filter((s) => s.category === filter);
 }
 
 function renderAllItem(s: Snapshot, forms: DetectedForm[]): HTMLLIElement {
@@ -656,8 +602,8 @@ async function backToList(): Promise<void> {
 type PreviewFormConfig = {
   headerTitle: string;
   headerMeta: string;
+  selector?: string;
   initialLabel: string;
-  initialCategory: string;
   confirmButtonText: string;
   fields: SnapshotField[];
   hasPassword: boolean;
@@ -668,7 +614,6 @@ type PreviewFormConfig = {
   initialIncludeReadonly: boolean;
   onConfirm: (data: {
     label: string;
-    category: string | undefined;
     includePwd: boolean;
     includeHidden: boolean;
     includeReadonly: boolean;
@@ -685,8 +630,8 @@ function renderSavePreview(
   renderPreviewForm({
     headerTitle: 'New Snapshot',
     headerMeta: formTitle(form),
+    selector: form.identity.domPath,
     initialLabel: '',
-    initialCategory: '',
     confirmButtonText: 'Save snapshot',
     fields,
     hasPassword: has.hasPassword,
@@ -701,7 +646,6 @@ function renderSavePreview(
         formIndex: form.index,
         options: {
           label: data.label,
-          category: data.category,
           includePasswords: data.includePwd,
         },
         fields: data.editedFields,
@@ -720,8 +664,8 @@ function renderEditSnapshot(snapshot: Snapshot): void {
   renderPreviewForm({
     headerTitle: 'Edit Snapshot',
     headerMeta: snapshot.label,
+    selector: snapshot.form.domPath,
     initialLabel: snapshot.label,
-    initialCategory: snapshot.category ?? '',
     confirmButtonText: 'Save changes',
     fields: snapshot.fields,
     hasPassword,
@@ -733,7 +677,6 @@ function renderEditSnapshot(snapshot: Snapshot): void {
     onConfirm: async (data) => {
       await SnapshotStore.update(snapshot.id, {
         label: data.label,
-        category: data.category,
         fields: data.editedFields,
         flags: {
           containsSecrets:
@@ -764,6 +707,14 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   (header.querySelector('.back') as HTMLButtonElement).addEventListener('click', backToList);
   view.appendChild(header);
 
+  if (config.selector) {
+    const sel = document.createElement('div');
+    sel.className = 'selector-line';
+    sel.title = 'Selector used to re-find this form';
+    sel.textContent = config.selector;
+    view.appendChild(sel);
+  }
+
   const labelField = document.createElement('label');
   labelField.className = 'field';
   labelField.innerHTML = `
@@ -771,14 +722,6 @@ function renderPreviewForm(config: PreviewFormConfig): void {
     <input type="text" id="snap-label" autocomplete="off" placeholder="e.g. dev-admin-login" />
   `;
   view.appendChild(labelField);
-
-  const categoryField = document.createElement('label');
-  categoryField.className = 'field';
-  categoryField.innerHTML = `
-    <span>Category <em>optional</em></span>
-    <input type="text" id="snap-category" autocomplete="off" placeholder="e.g. smoke-test" />
-  `;
-  view.appendChild(categoryField);
 
   const toggles = document.createElement('div');
   toggles.className = 'toggle-group';
@@ -821,7 +764,6 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   screen.appendChild(view);
 
   const labelInput = view.querySelector('#snap-label') as HTMLInputElement;
-  const categoryInput = view.querySelector('#snap-category') as HTMLInputElement;
   const includePwdInput = view.querySelector('#snap-include-pwd') as HTMLInputElement;
   const includeHiddenInput = view.querySelector('#snap-include-hidden') as HTMLInputElement;
   const includeReadonlyInput = view.querySelector('#snap-include-readonly') as HTMLInputElement;
@@ -829,7 +771,6 @@ function renderPreviewForm(config: PreviewFormConfig): void {
   const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
 
   labelInput.value = config.initialLabel;
-  categoryInput.value = config.initialCategory;
   includePwdInput.checked = config.initialIncludePwd;
   includeHiddenInput.checked = config.initialIncludeHidden;
   includeReadonlyInput.checked = config.initialIncludeReadonly;
@@ -898,7 +839,6 @@ function renderPreviewForm(config: PreviewFormConfig): void {
     }
     const res = await config.onConfirm({
       label,
-      category: categoryInput.value.trim() || undefined,
       includePwd: includePwdInput.checked,
       includeHidden: includeHiddenInput.checked,
       includeReadonly: includeReadonlyInput.checked,
@@ -1065,7 +1005,6 @@ function renderDeleteConfirm(snapshot: Snapshot): void {
   tbl.className = 'preview-table';
   tbl.innerHTML = `
     <tr><td class="k">Label</td><td class="v">${escapeHtml(snapshot.label)}</td></tr>
-    ${snapshot.category ? `<tr><td class="k">Category</td><td class="v">${escapeHtml(snapshot.category)}</td></tr>` : ''}
     <tr><td class="k">Origin</td><td class="v">${escapeHtml(snapshot.form.origin)}${escapeHtml(snapshot.form.pathname)}</td></tr>
     <tr><td class="k">Fields</td><td class="v">${snapshot.fields.length}</td></tr>
     <tr><td class="k">Saved</td><td class="v">${escapeHtml(new Date(snapshot.createdAt).toLocaleString())}</td></tr>

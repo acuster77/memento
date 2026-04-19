@@ -11,9 +11,8 @@ every time you cycle through a test flow.
 
 - **Capture & restore** the complete state of any form on any website with
   one click.
-- **Multiple labelled snapshots per form** — categorise them (e.g.
-  `smoke-test`, `admin-login`, `bad-input`) and filter the list by
-  category.
+- **Multiple labelled snapshots per form** — save as many variants as you
+  need (e.g. `smoke-test`, `admin-login`, `bad-input`).
 - **Editable preview** — inspect and tweak every captured value (matching
   the input type: text, textarea, checkbox, radio, single/multi-select,
   contenteditable) before you save.
