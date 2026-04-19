@@ -8,9 +8,16 @@
   </head>
   <body>
     <header class="top">
-      <h1>Memento</h1>
-      <button id="rescan" title="Rescan forms on page">Rescan</button>
+      <h1>
+        <img class="top-logo" src="/icons/32.png" alt="" />
+        Memento
+      </h1>
+      <button id="rescan" title="Refresh view">Refresh</button>
     </header>
+    <nav class="tab-bar" id="tab-bar">
+      <button class="tab-btn active" id="tab-forms" data-tab="forms">This Page</button>
+      <button class="tab-btn" id="tab-library" data-tab="library">Library</button>
+    </nav>
     <main id="root">
       <div id="screen">
         <p class="loading">Scanning…</p>

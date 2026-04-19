@@ -111,7 +111,7 @@ function readFieldInner(
         key: `radio:${el.name}`,
         type: 'radio',
         value: selected?.value ?? '',
-        labelText,
+        labelText: findRadioGroupLabel(el) ?? labelText,
         options,
       };
     }
@@ -163,16 +163,72 @@ function fieldKey(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
 }
 
 function findLabel(el: Element): string | undefined {
+  // 1. Explicit <label for="id">
   if (el.id) {
     const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
     const text = lbl?.textContent?.trim();
     if (text) return text;
   }
+  // 2. aria-labelledby / aria-label
+  const ariaLbl = el.getAttribute('aria-labelledby');
+  if (ariaLbl) {
+    const target = document.getElementById(ariaLbl);
+    const text = target?.textContent?.trim();
+    if (text) return text;
+  }
+  const aria = el.getAttribute('aria-label');
+  if (aria) return aria.trim();
+  // 3. Wrapping <label>
   const parent = el.closest('label');
   const parentText = parent?.textContent?.trim();
   if (parentText) return parentText;
-  const aria = el.getAttribute('aria-label');
-  if (aria) return aria.trim();
+  // 4. Preceding sibling <label> (common "label then field" pattern)
+  const sibLabel = findPrecedingSiblingLabel(el);
+  if (sibLabel) return sibLabel;
+  return undefined;
+}
+
+/** For a radio group, the individual radio is usually wrapped by a label
+ * containing the option's inline text ("Free"). The *group* label (e.g.
+ * "Plan") lives outside that wrapper. This walks out of any wrapping label
+ * before looking for an implicit or fieldset-legend label. */
+function findRadioGroupLabel(el: HTMLInputElement): string | undefined {
+  const ariaLbl = el.getAttribute('aria-labelledby');
+  if (ariaLbl) {
+    const target = document.getElementById(ariaLbl);
+    const text = target?.textContent?.trim();
+    if (text) return text;
+  }
+  const wrap = el.closest('label');
+  const start: Element = wrap ?? el;
+  let node: Element | null = start;
+  while (node && node.tagName !== 'FORM') {
+    const sib = findPrecedingSiblingLabel(node);
+    if (sib) return sib;
+    if (node.tagName === 'FIELDSET') {
+      const legend = node.querySelector(':scope > legend');
+      const text = legend?.textContent?.trim();
+      if (text) return text;
+    }
+    node = node.parentElement;
+  }
+  return undefined;
+}
+
+function findPrecedingSiblingLabel(el: Element): string | undefined {
+  let prev: Element | null = el.previousElementSibling;
+  while (prev) {
+    if (prev.tagName === 'LABEL' && !prev.hasAttribute('for')) {
+      const text = prev.textContent?.trim();
+      if (text) return text;
+    }
+    // Stop at the previous form control; that label "belongs" to it.
+    const tag = prev.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'FIELDSET') {
+      break;
+    }
+    prev = prev.previousElementSibling;
+  }
   return undefined;
 }
 

@@ -1,13 +1,56 @@
 :root {
-  --bg: #1c1c1e;
-  --panel: #2a2a2d;
-  --fg: #e6e6e9;
-  --muted: #9a9aa2;
+  color-scheme: light dark;
+
+  /* Light theme (default) */
+  --bg: #ffffff;
+  --panel: #f2f2f7;
+  --panel-hover: #e5e5ea;
+  --input-bg: #ffffff;
+  --match-bg: #ffffff;
+  --fg: #1c1c1e;
+  --muted: #6c6c70;
+  --border: #d1d1d6;
+  --border-subtle: #e5e5ea;
+  --chip-bg: #e5e5ea;
   --accent: #5ac8fa;
+  --accent-fg: #001a22;
+  --accent-hover: #7dd8ff;
   --warn: #ffcc00;
-  --danger: #ff453a;
-  --ok: #32d74b;
-  --border: #3a3a3f;
+  --warn-fg: #1a1300;
+  --danger: #ff3b30;
+  --danger-fg: #ffffff;
+  --danger-hover: #ff6b62;
+  --ok: #34c759;
+  --ok-fg: #001a05;
+  --scroll-thumb: #c7c7cc;
+  --shadow: rgba(0, 0, 0, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --panel: #2a2a2d;
+    --panel-hover: #34343a;
+    --input-bg: #1e1e22;
+    --match-bg: #222226;
+    --fg: #e6e6e9;
+    --muted: #9a9aa2;
+    --border: #3a3a3f;
+    --border-subtle: #2f2f35;
+    --chip-bg: #3a3a3f;
+    --accent: #5ac8fa;
+    --accent-fg: #001a22;
+    --accent-hover: #7dd8ff;
+    --warn: #ffcc00;
+    --warn-fg: #1a1300;
+    --danger: #ff453a;
+    --danger-fg: #ffffff;
+    --danger-hover: #ff6b62;
+    --ok: #32d74b;
+    --ok-fg: #001a05;
+    --scroll-thumb: #4a4a50;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
 }
 
 html {
@@ -50,7 +93,62 @@ body {
   margin: 0;
   font-weight: 600;
   letter-spacing: 0.0125em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
+
+.tab-bar {
+  display: flex;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+body.in-subview .tab-bar {
+  display: none;
+}
+
+.tab-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 0;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  position: relative;
+}
+
+.tab-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--fg);
+}
+
+.tab-btn.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.top-logo {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.25rem;
+  display: block;
+  flex-shrink: 0;
+}
+
 
 button {
   background: var(--panel);
@@ -65,7 +163,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #34343a;
+  background: var(--panel-hover);
 }
 
 button:disabled {
@@ -75,24 +173,24 @@ button:disabled {
 
 button.primary {
   background: var(--accent);
-  color: #001a22;
+  color: var(--accent-fg);
   border-color: transparent;
   font-weight: 600;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #7dd8ff;
+  background: var(--accent-hover);
 }
 
 button.danger {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-fg);
   border-color: transparent;
   font-weight: 600;
 }
 
 button.danger:hover:not(:disabled) {
-  background: #ff6b62;
+  background: var(--danger-hover);
 }
 
 button.ghost-danger {
@@ -101,7 +199,7 @@ button.ghost-danger {
 }
 
 button.ghost-danger:hover:not(:disabled) {
-  background: rgba(255, 69, 58, 0.12);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 #root {
@@ -112,14 +210,14 @@ button.ghost-danger:hover:not(:disabled) {
   /* Reserve gutter so the popup width doesn't shift when a scrollbar appears. */
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: #4a4a50 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 #root::-webkit-scrollbar {
   width: 0.5rem;
 }
 #root::-webkit-scrollbar-thumb {
-  background: #4a4a50;
+  background: var(--scroll-thumb);
   border-radius: 0.25rem;
 }
 #root::-webkit-scrollbar-track {
@@ -174,7 +272,7 @@ button.ghost-danger:hover:not(:disabled) {
   padding: 0.125rem 0.4375rem;
   border-radius: 0.25rem;
   font-size: 0.6875rem;
-  background: #3a3a3f;
+  background: var(--chip-bg);
   color: var(--fg);
   margin-left: 0.25rem;
   line-height: 1.4;
@@ -182,23 +280,12 @@ button.ghost-danger:hover:not(:disabled) {
 
 .badge.warn {
   background: var(--warn);
-  color: #111;
+  color: var(--warn-fg);
 }
 
 .badge.danger {
   background: var(--danger);
-  color: #fff;
-}
-
-.tag {
-  display: inline-block;
-  padding: 0.125rem 0.4375rem;
-  border-radius: 0.25rem;
-  font-size: 0.6875rem;
-  background: #3a3a3f;
-  color: var(--muted);
-  margin-left: 0.375rem;
-  line-height: 1.4;
+  color: var(--danger-fg);
 }
 
 .matches,
@@ -218,7 +305,7 @@ button.ghost-danger:hover:not(:disabled) {
   border-radius: 0.375rem;
   border: 1px solid var(--border);
   margin-top: 0.375rem;
-  background: #222226;
+  background: var(--match-bg);
   font-size: 0.875rem;
 }
 
@@ -241,6 +328,52 @@ button.ghost-danger:hover:not(:disabled) {
 .all-list .actions button {
   padding: 0.25rem 0.625rem;
   font-size: 0.8125rem;
+}
+
+.menu-btn {
+  padding: 0.25rem 0.4375rem !important;
+  font-size: 1rem !important;
+  line-height: 1;
+  min-width: 1.75rem;
+  letter-spacing: 0.0625em;
+}
+
+.menu-popover {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  box-shadow: 0 0.375rem 1.25rem var(--shadow);
+  padding: 0.25rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+}
+
+.menu-popover button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.menu-popover button:hover:not(:disabled) {
+  background: var(--panel-hover);
+}
+
+.menu-popover button.menu-danger {
+  color: var(--danger);
+}
+
+.menu-popover button.menu-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .all-snapshots {
@@ -441,7 +574,7 @@ button.ghost-danger:hover:not(:disabled) {
   font-size: 0.625rem;
   font-weight: 600;
   color: var(--muted);
-  background: #3a3a3f;
+  background: var(--chip-bg);
   vertical-align: 0.0625rem;
   letter-spacing: 0.03125em;
   text-transform: uppercase;
@@ -456,7 +589,7 @@ button.ghost-danger:hover:not(:disabled) {
 /* Text-like inputs share this visual rhythm. */
 .edit-input {
   width: 100%;
-  background: #1e1e22;
+  background: var(--input-bg);
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 0.25rem;
@@ -561,18 +694,18 @@ button.ghost-danger:hover:not(:disabled) {
   bottom: 1rem;
   transform: translateX(-50%);
   background: var(--ok);
-  color: #001a22;
+  color: var(--ok-fg);
   padding: 0.5rem 1rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
   font-weight: 600;
-  box-shadow: 0 0.125rem 0.75rem rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0.125rem 0.75rem var(--shadow);
   z-index: 10;
 }
 
 .toast.error {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-fg);
 }
 
 /* ---------- screen transitions ---------- */

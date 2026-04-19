@@ -16,9 +16,120 @@ import type {
 
 const root = document.getElementById('root') as HTMLElement;
 const screen = document.getElementById('screen') as HTMLElement;
-document.getElementById('rescan')!.addEventListener('click', renderList);
+document.getElementById('rescan')!.addEventListener('click', () => renderCurrentTab());
 
-renderList();
+// ---------- action menu (kebab overflow) ----------
+
+type MenuItem = { label: string; action: () => void; danger?: boolean };
+
+let openMenuEl: HTMLElement | null = null;
+let openMenuCleanup: (() => void) | null = null;
+
+function closeActionMenu(): void {
+  if (!openMenuEl) return;
+  openMenuCleanup?.();
+  openMenuEl.remove();
+  openMenuEl = null;
+  openMenuCleanup = null;
+}
+
+function openActionMenu(anchor: HTMLElement, items: MenuItem[]): void {
+  // If this exact anchor already has an open menu, close it (toggle behaviour).
+  if (
+    openMenuEl &&
+    anchor.dataset.menuId &&
+    openMenuEl.dataset.anchorId === anchor.dataset.menuId
+  ) {
+    closeActionMenu();
+    return;
+  }
+  closeActionMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'menu-popover';
+  const anchorId = `m${Math.random().toString(36).slice(2, 8)}`;
+  anchor.dataset.menuId = anchorId;
+  menu.dataset.anchorId = anchorId;
+
+  for (const item of items) {
+    const b = document.createElement('button');
+    b.textContent = item.label;
+    if (item.danger) b.classList.add('menu-danger');
+    b.addEventListener('click', () => {
+      closeActionMenu();
+      item.action();
+    });
+    menu.appendChild(b);
+  }
+
+  document.body.appendChild(menu);
+  positionMenuBelow(anchor, menu);
+
+  const onOutside = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && e.target !== anchor) {
+      closeActionMenu();
+    }
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeActionMenu();
+  };
+  // Defer attaching the click listener so the current click doesn't close it.
+  const t = setTimeout(() => document.addEventListener('click', onOutside), 0);
+  document.addEventListener('keydown', onKey);
+
+  openMenuEl = menu;
+  openMenuCleanup = () => {
+    clearTimeout(t);
+    document.removeEventListener('click', onOutside);
+    document.removeEventListener('keydown', onKey);
+  };
+}
+
+function positionMenuBelow(anchor: HTMLElement, menu: HTMLElement): void {
+  const rect = anchor.getBoundingClientRect();
+  const mh = menu.offsetHeight;
+  const mw = menu.offsetWidth;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let top = rect.bottom + 4;
+  if (top + mh > vh - 4 && rect.top - mh - 4 > 0) {
+    top = rect.top - mh - 4;
+  }
+  let left = rect.right - mw;
+  if (left < 4) left = 4;
+  if (left + mw > vw - 4) left = vw - mw - 4;
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+}
+
+// ---------- tabs ----------
+
+type TabId = 'forms' | 'library';
+let currentTab: TabId = 'forms';
+
+const tabButtons = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
+for (const btn of tabButtons) {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab as TabId;
+    switchTab(tab);
+  });
+}
+
+function switchTab(tab: TabId): void {
+  if (currentTab === tab) return;
+  currentTab = tab;
+  for (const btn of tabButtons) {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  }
+  renderCurrentTab();
+}
+
+function renderCurrentTab(): Promise<void> {
+  document.body.classList.remove('in-subview');
+  return currentTab === 'forms' ? renderForms() : renderLibrary();
+}
+
+renderCurrentTab();
 
 type NavDirection = 'forward' | 'back';
 
@@ -35,6 +146,7 @@ async function navigate(
   direction: NavDirection,
   update: () => void | Promise<void>,
 ): Promise<void> {
+  closeActionMenu();
   if (prefersReducedMotion) {
     await update();
     return;
@@ -82,9 +194,9 @@ async function runAnimation(
   }
 }
 
-// ---------- list view ----------
+// ---------- This Page tab ----------
 
-async function renderList(): Promise<void> {
+async function renderForms(): Promise<void> {
   screen.innerHTML = '<p class="loading">Scanning…</p>';
   let scan: ScanResponse;
   try {
@@ -101,13 +213,86 @@ async function renderList(): Promise<void> {
     p.className = 'empty';
     p.textContent = 'No forms detected on this page.';
     screen.appendChild(p);
-  } else {
-    for (const form of scan.forms) {
-      screen.appendChild(renderFormCard(form, all));
-    }
+    return;
+  }
+  for (const form of scan.forms) {
+    screen.appendChild(renderFormCard(form, all));
+  }
+}
+
+async function fetchActiveFormsSilently(): Promise<DetectedForm[]> {
+  try {
+    const scan = await sendToActiveTab<ScanResponse>({ kind: 'scan' });
+    return scan.forms;
+  } catch {
+    return [];
+  }
+}
+
+// ---------- Library tab ----------
+
+async function renderLibrary(): Promise<void> {
+  screen.innerHTML = '<p class="loading">Loading…</p>';
+  const all = await SnapshotStore.all();
+  const forms = all.length > 0 ? await fetchActiveFormsSilently() : [];
+  screen.innerHTML = '';
+
+  if (all.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'No snapshots saved yet.';
+    screen.appendChild(p);
+    screen.appendChild(renderDataTools(all));
+    return;
   }
 
-  screen.appendChild(renderAllSnapshots(all, scan.forms));
+  const categories = collectCategories(all);
+  const hasUncategorized = all.some((s) => !s.category);
+
+  if (categories.length > 0 || hasUncategorized) {
+    if (
+      categoryFilter &&
+      categoryFilter !== '__uncategorized__' &&
+      !categories.includes(categoryFilter)
+    ) {
+      categoryFilter = '';
+    }
+    if (categoryFilter === '__uncategorized__' && !hasUncategorized) {
+      categoryFilter = '';
+    }
+
+    const filterRow = document.createElement('div');
+    filterRow.className = 'filter-row';
+    filterRow.innerHTML = '<span class="filter-label">Category</span>';
+    const sel = document.createElement('select');
+    sel.innerHTML =
+      `<option value="">All</option>` +
+      categories
+        .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+        .join('') +
+      (hasUncategorized ? `<option value="__uncategorized__">Uncategorized</option>` : '');
+    sel.value = categoryFilter;
+    sel.addEventListener('change', () => {
+      categoryFilter = sel.value;
+      renderLibrary();
+    });
+    filterRow.appendChild(sel);
+    screen.appendChild(filterRow);
+  }
+
+  const filtered = applyCategoryFilter(all, categoryFilter);
+  if (filtered.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty inline';
+    p.textContent = 'No snapshots match this filter.';
+    screen.appendChild(p);
+  } else {
+    const ul = document.createElement('ul');
+    ul.className = 'all-list';
+    for (const s of filtered) ul.appendChild(renderAllItem(s, forms));
+    screen.appendChild(ul);
+  }
+
   screen.appendChild(renderDataTools(all));
 }
 
@@ -124,16 +309,11 @@ function renderFormCard(form: DetectedForm, all: Snapshot[]): HTMLElement {
   });
 
   const title = formTitle(form);
-  const badges: string[] = [];
-  if (form.hasPassword) badges.push('<span class="badge warn">password</span>');
-  if (form.hasFile) badges.push('<span class="badge">file</span>');
-  if (form.hasHidden) badges.push('<span class="badge">hidden</span>');
-  if (form.hasReadonly) badges.push('<span class="badge">readonly</span>');
 
   el.innerHTML = `
     <header>
       <strong>${escapeHtml(title)}</strong>
-      <span class="meta">${form.fieldCount} fields ${badges.join(' ')}</span>
+      <span class="meta">${form.fieldCount} field${form.fieldCount === 1 ? '' : 's'}</span>
     </header>
     <button class="save primary">New Snapshot</button>
     <ul class="matches"></ul>
@@ -162,94 +342,30 @@ function renderMatch(s: Snapshot, formIndex: number): HTMLLIElement {
   li.innerHTML = `
     <div>
       <strong>${escapeHtml(s.label)}</strong>
-      ${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ''}
       ${secret}
     </div>
     <div class="actions">
-      <button class="apply">Apply</button>
-      <button class="delete" title="Delete">×</button>
+      <button class="apply primary">Apply</button>
+      <button class="menu-btn" title="More actions" aria-label="More actions">⋮</button>
     </div>
   `;
   (li.querySelector('.apply') as HTMLButtonElement).addEventListener('click', () =>
     applyTo(formIndex, s.id),
   );
-  (li.querySelector('.delete') as HTMLButtonElement).addEventListener('click', () =>
-    openDeleteConfirm(s),
-  );
+  const menuBtn = li.querySelector('.menu-btn') as HTMLButtonElement;
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openActionMenu(menuBtn, [
+      { label: 'Edit', action: () => openEditSnapshot(s) },
+      { label: 'Export JSON', action: () => exportSnapshot(s) },
+      { label: 'Delete', action: () => openDeleteConfirm(s), danger: true },
+    ]);
+  });
   return li;
 }
 
 // Persists across rerenders. '' = all. '__uncategorized__' = no category.
 let categoryFilter = '';
-
-function renderAllSnapshots(all: Snapshot[], forms: DetectedForm[]): HTMLElement {
-  const details = document.createElement('details');
-  details.className = 'all-snapshots';
-  const summary = document.createElement('summary');
-  summary.textContent = `All snapshots (${all.length})`;
-  details.appendChild(summary);
-
-  if (all.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'empty';
-    p.textContent = 'No snapshots saved yet.';
-    details.appendChild(p);
-    return details;
-  }
-
-  const categories = collectCategories(all);
-  const hasUncategorized = all.some((s) => !s.category);
-
-  if (categories.length > 0 || hasUncategorized) {
-    // If the previously-chosen filter no longer applies, reset to "all".
-    if (
-      categoryFilter &&
-      categoryFilter !== '__uncategorized__' &&
-      !categories.includes(categoryFilter)
-    ) {
-      categoryFilter = '';
-    }
-    if (categoryFilter === '__uncategorized__' && !hasUncategorized) {
-      categoryFilter = '';
-    }
-
-    const filterRow = document.createElement('div');
-    filterRow.className = 'filter-row';
-    filterRow.innerHTML = '<span class="filter-label">Category</span>';
-    const sel = document.createElement('select');
-    sel.innerHTML =
-      `<option value="">All</option>` +
-      categories
-        .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
-        .join('') +
-      (hasUncategorized ? `<option value="__uncategorized__">Uncategorized</option>` : '');
-    sel.value = categoryFilter;
-    sel.addEventListener('change', () => {
-      categoryFilter = sel.value;
-      renderList();
-    });
-    filterRow.appendChild(sel);
-    details.appendChild(filterRow);
-  }
-
-  const filtered = applyCategoryFilter(all, categoryFilter);
-
-  if (filtered.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'empty inline';
-    p.textContent = 'No snapshots match this filter.';
-    details.appendChild(p);
-    return details;
-  }
-
-  const ul = document.createElement('ul');
-  ul.className = 'all-list';
-  for (const s of filtered) {
-    ul.appendChild(renderAllItem(s, forms));
-  }
-  details.appendChild(ul);
-  return details;
-}
 
 function collectCategories(all: Snapshot[]): string[] {
   const set = new Set<string>();
@@ -269,7 +385,6 @@ function renderAllItem(s: Snapshot, forms: DetectedForm[]): HTMLLIElement {
   const info = document.createElement('div');
   info.innerHTML = `
     <strong>${escapeHtml(s.label)}</strong>
-    ${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ''}
     ${secret}
     <div class="meta-line">${escapeHtml(s.form.origin)}${escapeHtml(s.form.pathname)}</div>
   `;
@@ -289,19 +404,22 @@ function renderAllItem(s: Snapshot, forms: DetectedForm[]): HTMLLIElement {
     select.value = '';
   });
 
-  const exportBtn = document.createElement('button');
-  exportBtn.textContent = '↓';
-  exportBtn.title = 'Export as JSON';
-  exportBtn.addEventListener('click', () => exportSnapshot(s));
-
-  const del = document.createElement('button');
-  del.textContent = '×';
-  del.title = 'Delete';
-  del.addEventListener('click', () => openDeleteConfirm(s));
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'menu-btn';
+  menuBtn.textContent = '⋮';
+  menuBtn.title = 'More actions';
+  menuBtn.setAttribute('aria-label', 'More actions');
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openActionMenu(menuBtn, [
+      { label: 'Edit', action: () => openEditSnapshot(s) },
+      { label: 'Export JSON', action: () => exportSnapshot(s) },
+      { label: 'Delete', action: () => openDeleteConfirm(s), danger: true },
+    ]);
+  });
 
   actions.appendChild(select);
-  actions.appendChild(exportBtn);
-  actions.appendChild(del);
+  actions.appendChild(menuBtn);
   li.appendChild(actions);
   return li;
 }
@@ -354,6 +472,7 @@ async function openClearAllConfirm(count: number): Promise<void> {
 }
 
 function renderClearAllConfirm(count: number): void {
+  document.body.classList.add('in-subview');
   screen.innerHTML = '';
 
   const view = document.createElement('div');
@@ -448,7 +567,7 @@ async function importFromFile(file: File): Promise<void> {
       imported++;
     }
     toast(`Imported ${imported} snapshot${imported === 1 ? '' : 's'}`);
-    renderList();
+    renderCurrentTab();
   } catch (e) {
     toast(`Import failed: ${String(e)}`, true);
   }
@@ -531,15 +650,105 @@ async function openSavePreview(form: DetectedForm): Promise<void> {
 }
 
 async function backToList(): Promise<void> {
-  await navigate('back', renderList);
+  await navigate('back', renderCurrentTab);
 }
+
+type PreviewFormConfig = {
+  headerTitle: string;
+  headerMeta: string;
+  initialLabel: string;
+  initialCategory: string;
+  confirmButtonText: string;
+  fields: SnapshotField[];
+  hasPassword: boolean;
+  hasHidden: boolean;
+  hasReadonly: boolean;
+  initialIncludePwd: boolean;
+  initialIncludeHidden: boolean;
+  initialIncludeReadonly: boolean;
+  onConfirm: (data: {
+    label: string;
+    category: string | undefined;
+    includePwd: boolean;
+    includeHidden: boolean;
+    includeReadonly: boolean;
+    editedFields: SnapshotField[];
+  }) => Promise<{ ok: true; toast: string } | { ok: false; error: string }>;
+};
 
 function renderSavePreview(
   form: DetectedForm,
-  identity: FormIdentity,
+  _identity: FormIdentity,
   fields: SnapshotField[],
   has: { hasPassword: boolean; hasHidden: boolean; hasReadonly: boolean },
 ): void {
+  renderPreviewForm({
+    headerTitle: 'New Snapshot',
+    headerMeta: formTitle(form),
+    initialLabel: '',
+    initialCategory: '',
+    confirmButtonText: 'Save snapshot',
+    fields,
+    hasPassword: has.hasPassword,
+    hasHidden: has.hasHidden,
+    hasReadonly: has.hasReadonly,
+    initialIncludePwd: false,
+    initialIncludeHidden: false,
+    initialIncludeReadonly: false,
+    onConfirm: async (data) => {
+      const res = await sendToActiveTab<SaveResponse>({
+        kind: 'save',
+        formIndex: form.index,
+        options: {
+          label: data.label,
+          category: data.category,
+          includePasswords: data.includePwd,
+        },
+        fields: data.editedFields,
+      });
+      if (res.ok) return { ok: true, toast: `Saved "${res.snapshot.label}"` };
+      return { ok: false, error: res.error };
+    },
+  });
+}
+
+function renderEditSnapshot(snapshot: Snapshot): void {
+  const hasPassword = snapshot.fields.some((f) => f.type === 'password');
+  const hasHidden = snapshot.fields.some((f) => f.type === 'hidden');
+  const hasReadonly = snapshot.fields.some((f) => f.readonly);
+
+  renderPreviewForm({
+    headerTitle: 'Edit Snapshot',
+    headerMeta: snapshot.label,
+    initialLabel: snapshot.label,
+    initialCategory: snapshot.category ?? '',
+    confirmButtonText: 'Save changes',
+    fields: snapshot.fields,
+    hasPassword,
+    hasHidden,
+    hasReadonly,
+    initialIncludePwd: hasPassword,
+    initialIncludeHidden: hasHidden,
+    initialIncludeReadonly: hasReadonly,
+    onConfirm: async (data) => {
+      await SnapshotStore.update(snapshot.id, {
+        label: data.label,
+        category: data.category,
+        fields: data.editedFields,
+        flags: {
+          containsSecrets:
+            data.includePwd && data.editedFields.some((f) => f.type === 'password'),
+          containsHidden: data.editedFields.some((f) => f.type === 'hidden'),
+          hasUnrestorableFiles: snapshot.flags.hasUnrestorableFiles,
+        },
+      });
+      return { ok: true, toast: `Updated "${data.label}"` };
+    },
+  });
+}
+
+function renderPreviewForm(config: PreviewFormConfig): void {
+  document.body.classList.add('in-subview');
   screen.innerHTML = '';
 
   const view = document.createElement('div');
@@ -549,8 +758,8 @@ function renderSavePreview(
   header.className = 'preview-header';
   header.innerHTML = `
     <button class="back" title="Back">←</button>
-    <strong>New Snapshot</strong>
-    <span class="meta">${escapeHtml(formTitle(form))}</span>
+    <strong>${escapeHtml(config.headerTitle)}</strong>
+    <span class="meta">${escapeHtml(config.headerMeta)}</span>
   `;
   (header.querySelector('.back') as HTMLButtonElement).addEventListener('click', backToList);
   view.appendChild(header);
@@ -574,17 +783,17 @@ function renderSavePreview(
   const toggles = document.createElement('div');
   toggles.className = 'toggle-group';
   toggles.style.display =
-    has.hasPassword || has.hasHidden || has.hasReadonly ? '' : 'none';
+    config.hasPassword || config.hasHidden || config.hasReadonly ? '' : 'none';
   toggles.innerHTML = `
-    <label class="toggle" style="display:${has.hasPassword ? '' : 'none'}">
+    <label class="toggle" style="display:${config.hasPassword ? '' : 'none'}">
       <input type="checkbox" id="snap-include-pwd" />
       <span>Include password fields</span>
     </label>
-    <label class="toggle" style="display:${has.hasHidden ? '' : 'none'}">
+    <label class="toggle" style="display:${config.hasHidden ? '' : 'none'}">
       <input type="checkbox" id="snap-include-hidden" />
       <span>Include hidden fields</span>
     </label>
-    <label class="toggle" style="display:${has.hasReadonly ? '' : 'none'}">
+    <label class="toggle" style="display:${config.hasReadonly ? '' : 'none'}">
       <input type="checkbox" id="snap-include-readonly" />
       <span>Include readonly fields</span>
     </label>
@@ -605,7 +814,7 @@ function renderSavePreview(
   footer.className = 'preview-footer';
   footer.innerHTML = `
     <button class="cancel">Cancel</button>
-    <button class="confirm primary" disabled>Save snapshot</button>
+    <button class="confirm primary" disabled>${escapeHtml(config.confirmButtonText)}</button>
   `;
   view.appendChild(footer);
 
@@ -619,8 +828,12 @@ function renderSavePreview(
   const confirmBtn = footer.querySelector('.confirm') as HTMLButtonElement;
   const cancelBtn = footer.querySelector('.cancel') as HTMLButtonElement;
 
-  // Map from field.key to the form-control element we render, so we can read
-  // user-edited values back out when the user hits Save.
+  labelInput.value = config.initialLabel;
+  categoryInput.value = config.initialCategory;
+  includePwdInput.checked = config.initialIncludePwd;
+  includeHiddenInput.checked = config.initialIncludeHidden;
+  includeReadonlyInput.checked = config.initialIncludeReadonly;
+
   const editors = new Map<
     string,
     HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -635,9 +848,9 @@ function renderSavePreview(
 
   const repaintTable = () => {
     editors.clear();
-    const visible = fields.filter(fieldIsIncluded);
-    titleEl.textContent = `Preview (${visible.length} of ${fields.length} field${
-      fields.length === 1 ? '' : 's'
+    const visible = config.fields.filter(fieldIsIncluded);
+    titleEl.textContent = `Preview (${visible.length} of ${config.fields.length} field${
+      config.fields.length === 1 ? '' : 's'
     })`;
     gridEl.innerHTML = '';
     if (visible.length === 0) {
@@ -666,6 +879,7 @@ function renderSavePreview(
   const validate = () => {
     confirmBtn.disabled = labelInput.value.trim().length === 0;
   };
+  validate();
 
   labelInput.addEventListener('input', validate);
   includePwdInput.addEventListener('change', repaintTable);
@@ -677,23 +891,21 @@ function renderSavePreview(
     if (!label) return;
     confirmBtn.disabled = true;
     const editedFields: SnapshotField[] = [];
-    for (const f of fields) {
+    for (const f of config.fields) {
       if (!fieldIsIncluded(f)) continue;
       const editor = editors.get(f.key);
       editedFields.push(editor ? readEditor(f, editor) : f);
     }
-    const res = await sendToActiveTab<SaveResponse>({
-      kind: 'save',
-      formIndex: form.index,
-      options: {
-        label,
-        category: categoryInput.value.trim() || undefined,
-        includePasswords: includePwdInput.checked,
-      },
-      fields: editedFields,
+    const res = await config.onConfirm({
+      label,
+      category: categoryInput.value.trim() || undefined,
+      includePwd: includePwdInput.checked,
+      includeHidden: includeHiddenInput.checked,
+      includeReadonly: includeReadonlyInput.checked,
+      editedFields,
     });
     if (res.ok) {
-      toast(`Saved "${res.snapshot.label}"`);
+      toast(res.toast);
       await backToList();
     } else {
       toast(`Save failed: ${res.error}`, true);
@@ -707,9 +919,15 @@ function renderSavePreview(
   });
 
   repaintTable();
+}
 
-  // Suppress unused warning; the identity is displayed via form title.
-  void identity;
+async function openEditSnapshot(snapshot: Snapshot): Promise<void> {
+  await navigate('forward', () => {
+    renderEditSnapshot(snapshot);
+  });
+  const labelInput = document.getElementById('snap-label') as HTMLInputElement | null;
+  labelInput?.focus({ preventScroll: true });
+  labelInput?.select();
 }
 
 type EditorResult = {
@@ -820,6 +1038,7 @@ async function openDeleteConfirm(snapshot: Snapshot): Promise<void> {
 }
 
 function renderDeleteConfirm(snapshot: Snapshot): void {
+  document.body.classList.add('in-subview');
   screen.innerHTML = '';
 
   const view = document.createElement('div');
