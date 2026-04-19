@@ -1014,23 +1014,93 @@ function buildFakerButton(
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const ranked = rankedFakerOptions({
-      type: field.type,
-      label: field.labelText,
-      fieldKey: field.key,
-    });
-    openActionMenu(
-      btn,
-      ranked.map((opt) => ({
-        label: opt.label,
-        action: () => {
-          input.value = fakerGenerate(opt.key);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        },
-      })),
-    );
+    openGeneratorPane(field, input);
   });
   return btn;
+}
+
+let activePane: HTMLElement | null = null;
+let activePaneCleanup: (() => void) | null = null;
+
+function openGeneratorPane(
+  field: SnapshotField,
+  input: HTMLInputElement | HTMLTextAreaElement,
+): void {
+  closeGeneratorPane();
+
+  const pane = document.createElement('div');
+  pane.className = 'gen-pane';
+  const appHeader = document.querySelector('.app-header') as HTMLElement | null;
+  const top = appHeader ? appHeader.getBoundingClientRect().bottom : 0;
+  pane.style.top = `${top}px`;
+
+  const context = field.labelText || fieldDisplayLabel(field);
+  pane.innerHTML = `
+    <header class="gen-pane-header">
+      <button type="button" class="gen-pane-close" aria-label="Close generator pane">&#x2715;</button>
+      <div class="gen-pane-title">
+        <span class="gen-pane-eyebrow">Generate for</span>
+        <strong>${escapeHtml(context)}</strong>
+      </div>
+    </header>
+    <div class="gen-pane-list" role="list"></div>
+    <footer class="gen-pane-footer">Click a generator to fill &middot; click again for a new value</footer>
+  `;
+
+  const list = pane.querySelector('.gen-pane-list') as HTMLDivElement;
+  const ranked = rankedFakerOptions({
+    type: field.type,
+    label: field.labelText,
+    fieldKey: field.key,
+  });
+  for (const opt of ranked) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'gen-pane-row';
+    row.innerHTML = `
+      <span class="gen-pane-row-label">${escapeHtml(opt.label)}</span>
+      <span class="gen-pane-row-sample" aria-hidden="true"></span>
+    `;
+    const sample = row.querySelector('.gen-pane-row-sample') as HTMLSpanElement;
+    row.addEventListener('click', () => {
+      const value = fakerGenerate(opt.key);
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      sample.textContent = value;
+      row.classList.add('is-applied');
+    });
+    list.appendChild(row);
+  }
+
+  (pane.querySelector('.gen-pane-close') as HTMLButtonElement).addEventListener(
+    'click',
+    closeGeneratorPane,
+  );
+
+  document.body.appendChild(pane);
+  activePane = pane;
+  requestAnimationFrame(() => pane.classList.add('open'));
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeGeneratorPane();
+  };
+  document.addEventListener('keydown', onKey);
+  activePaneCleanup = () => {
+    document.removeEventListener('keydown', onKey);
+  };
+}
+
+function closeGeneratorPane(): void {
+  if (activePaneCleanup) {
+    activePaneCleanup();
+    activePaneCleanup = null;
+  }
+  if (activePane) {
+    const pane = activePane;
+    pane.classList.remove('open');
+    setTimeout(() => pane.remove(), 220);
+    activePane = null;
+  }
 }
 
 function readEditor(
